@@ -1478,7 +1478,10 @@ function resetGame() {
   isReceivingMove = false;
   initBoard();
   mustCapturePieces = findMustCapture();
-  document.getElementById('status').style.background = '';
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = '';
+  statusEl.className = 'red-turn';
+  statusEl.style.background = '';
   render();
 }
 
