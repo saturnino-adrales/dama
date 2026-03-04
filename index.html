@@ -368,6 +368,81 @@
     transition: opacity 0.2s;
   }
   #update-btn:hover { opacity: 1; border-color: #f0c040; color: #e0e0e0; }
+
+  /* Changelog button */
+  #changelog-btn {
+    position: fixed;
+    bottom: 12px;
+    left: 12px;
+    padding: 6px 14px;
+    font-size: 12px;
+    background: #0f1a2e;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #666;
+    cursor: pointer;
+    z-index: 50;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+  }
+  #changelog-btn:hover { opacity: 1; border-color: #f0c040; color: #e0e0e0; }
+
+  /* Changelog modal */
+  #changelog-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.8);
+    z-index: 200;
+    justify-content: center;
+    align-items: center;
+    padding: 20px;
+  }
+  #changelog-overlay.active { display: flex; }
+  .changelog-box {
+    background: #16213e;
+    border: 2px solid #f0c040;
+    border-radius: 12px;
+    padding: 24px 28px;
+    max-width: 420px;
+    width: 100%;
+    max-height: 80vh;
+    overflow-y: auto;
+    position: relative;
+  }
+  .changelog-box h2 { color: #f0c040; font-size: 20px; margin-bottom: 16px; }
+  .changelog-close {
+    position: absolute;
+    top: 12px;
+    right: 16px;
+    background: none;
+    border: none;
+    color: #888;
+    font-size: 22px;
+    cursor: pointer;
+    padding: 4px 8px;
+  }
+  .changelog-close:hover { color: #f0c040; background: none; }
+  .changelog-date {
+    color: #f0c040;
+    font-size: 13px;
+    font-weight: bold;
+    margin-top: 14px;
+    margin-bottom: 6px;
+    border-bottom: 1px solid #0f3460;
+    padding-bottom: 4px;
+  }
+  .changelog-date:first-of-type { margin-top: 0; }
+  .changelog-box ul {
+    padding-left: 18px;
+    margin: 0;
+  }
+  .changelog-box li {
+    font-size: 13px;
+    line-height: 1.6;
+    color: #ccc;
+    margin-bottom: 2px;
+  }
 </style>
 </head>
 <body>
@@ -1945,11 +2020,57 @@ if (myUsername) {
   checkForRejoinableGames();
 }
 function forceUpdate() {
-  // Bypass PWA/home screen cache by navigating with cache-busting param
   const url = location.href.split('?')[0] + '?_=' + Date.now();
   location.replace(url);
 }
+
+function toggleChangelog() {
+  document.getElementById('changelog-overlay').classList.toggle('active');
+}
 </script>
+
+<button id="changelog-btn" onclick="toggleChangelog()">Changelog</button>
 <button id="update-btn" onclick="forceUpdate()">Update</button>
+
+<div id="changelog-overlay" onclick="if(event.target===this)toggleChangelog()">
+  <div class="changelog-box">
+    <button class="changelog-close" onclick="toggleChangelog()">&times;</button>
+    <h2>Changelog</h2>
+
+    <div class="changelog-date">March 5, 2025</div>
+    <ul>
+      <li>Winner moves first on rematch</li>
+      <li>Rematch button after game ends — swap sides and keep playing</li>
+      <li>Win counter tracks session scores across rematches</li>
+      <li>Move sound effect on every piece move</li>
+      <li>Online status dot (green/red) next to opponent name</li>
+      <li>Board shown while waiting for opponent (instead of spinner)</li>
+      <li>Rejoin ongoing game after disconnect</li>
+      <li>Force-update button for home screen installs</li>
+    </ul>
+
+    <div class="changelog-date">March 1, 2025</div>
+    <ul>
+      <li>Fix game restart after win/lose not responding to clicks</li>
+    </ul>
+
+    <div class="changelog-date">February 28, 2025</div>
+    <ul>
+      <li>Online multiplayer via Supabase Realtime</li>
+      <li>Lobby system with create/join/accept flow</li>
+      <li>Board flip for joiner (you always play from bottom)</li>
+      <li>Resign button for online games</li>
+    </ul>
+
+    <div class="changelog-date">February 27, 2025</div>
+    <ul>
+      <li>Initial release</li>
+      <li>Local 2-player mode</li>
+      <li>NPC Easy, Medium, Hard (minimax AI)</li>
+      <li>Flying kings, mandatory captures, multi-jump chains</li>
+    </ul>
+  </div>
+</div>
+
 </body>
 </html>
