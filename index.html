@@ -4,6 +4,7 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Dama - Checkers</title>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   body {
@@ -18,6 +19,33 @@
     gap: 16px;
   }
   h1 { font-size: 28px; letter-spacing: 2px; color: #f0c040; }
+  .screen {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    background: #16213e;
+    border: 2px solid #f0c040;
+    border-radius: 12px;
+    padding: 32px 48px;
+  }
+  .screen.active { display: flex; }
+  .screen h2 { color: #f0c040; font-size: 22px; }
+  .mode-btn {
+    padding: 14px 40px;
+    font-size: 18px;
+    border: 2px solid #0f3460;
+    border-radius: 8px;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 260px;
+    text-align: center;
+  }
+  .mode-btn:hover { background: #1a3a6e; border-color: #f0c040; }
+  .mode-btn small { display: block; font-size: 12px; color: #888; margin-top: 4px; }
+  #game-area { display: none; flex-direction: column; align-items: center; gap: 16px; }
   #status {
     font-size: 20px;
     min-height: 32px;
@@ -135,6 +163,7 @@
     transition: background 0.2s;
   }
   button:hover { background: #1a3a6e; }
+  button:disabled { opacity: 0.5; cursor: not-allowed; }
   #rules {
     max-width: min(85vw, 560px);
     background: #16213e;
@@ -149,38 +178,250 @@
   #rules ul { padding-left: 18px; }
   #rules li { margin-bottom: 2px; }
   .hidden { display: none !important; }
+  #mode-label {
+    font-size: 13px;
+    color: #888;
+    background: #0f1a2e;
+    padding: 4px 12px;
+    border-radius: 4px;
+  }
+
+  /* Login screen */
+  .login-input {
+    padding: 12px 20px;
+    font-size: 18px;
+    border: 2px solid #0f3460;
+    border-radius: 8px;
+    background: #1a1a2e;
+    color: #e0e0e0;
+    text-align: center;
+    width: 260px;
+    outline: none;
+  }
+  .login-input:focus { border-color: #f0c040; }
+  .login-input::placeholder { color: #555; }
+
+  /* Lobby */
+  #lobby-list {
+    width: 320px;
+    max-height: 300px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+  .lobby-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 16px;
+    background: #1a1a2e;
+    border: 1px solid #0f3460;
+    border-radius: 8px;
+  }
+  .lobby-item .creator { color: #f0c040; font-weight: bold; }
+  .lobby-item .time { color: #666; font-size: 12px; }
+  .lobby-empty {
+    color: #666;
+    font-style: italic;
+    text-align: center;
+    padding: 20px;
+  }
+  .join-btn {
+    padding: 6px 16px;
+    font-size: 13px;
+    background: #2a5a2a;
+    border-color: #4a8a4a;
+  }
+  .join-btn:hover { background: #3a7a3a; }
+
+  /* Waiting screen */
+  .spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #0f3460;
+    border-top-color: #f0c040;
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .join-request {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 12px 16px;
+    background: #1a1a2e;
+    border: 1px solid #f0c040;
+    border-radius: 8px;
+  }
+  .join-request .name { color: #f0c040; font-weight: bold; }
+  .accept-btn { background: #2a5a2a; border-color: #4a8a4a; }
+  .accept-btn:hover { background: #3a7a3a; }
+  .decline-btn { background: #5a2a2a; border-color: #8a4a4a; }
+  .decline-btn:hover { background: #7a3a3a; }
+
+  /* Disconnect overlay */
+  #disconnect-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    justify-content: center;
+    align-items: center;
+  }
+  #disconnect-overlay.active { display: flex; }
+  .disconnect-box {
+    background: #16213e;
+    border: 2px solid #f0c040;
+    border-radius: 12px;
+    padding: 32px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    align-items: center;
+  }
+  .disconnect-box h3 { color: #e74c3c; }
+  .disconnect-timer { font-size: 24px; color: #f0c040; }
 </style>
 </head>
 <body>
 
 <h1>DAMA</h1>
-<div id="score">
-  <span class="score-red">Red: <b id="red-count">12</b></span>
-  <span class="score-black">Black: <b id="black-count">12</b></span>
-</div>
-<div id="status" class="red-turn">Red's turn</div>
-<div id="board"></div>
-<div id="controls">
-  <button onclick="resetGame()">New Game</button>
-  <button onclick="toggleRules()">Rules</button>
+
+<!-- Login Screen -->
+<div id="login-screen" class="screen active">
+  <h2>Enter Username</h2>
+  <input type="text" id="username-input" class="login-input" placeholder="Your name" maxlength="20" autocomplete="off">
+  <button class="mode-btn" onclick="submitLogin()">Enter</button>
 </div>
 
-<div id="rules" class="hidden">
-  <h3>How to Play</h3>
-  <ul>
-    <li><b>2 Players</b> take turns on the same screen. Red goes first.</li>
-    <li>Pieces move <b>diagonally forward</b> one square onto dark tiles.</li>
-    <li><b>Capture</b> by jumping over an opponent's piece diagonally. The jumped piece is removed.</li>
-    <li><b>Captures are mandatory</b>. If you can capture, you must. Pieces that must capture will pulse.</li>
-    <li><b>Multi-jump</b>: if after a capture another capture is available with the same piece, you must continue.</li>
-    <li>When a piece reaches the <b>far row</b>, it becomes a <b>King</b> (crowned with K). Kings can move and capture diagonally in <b>all 4 directions</b>.</li>
-    <li>You <b>win</b> by capturing all opponent pieces or leaving them with no legal moves.</li>
-  </ul>
+<!-- Mode Selection Screen -->
+<div id="mode-select" class="screen">
+  <h2>Select Mode</h2>
+  <div id="username-display" style="color: #f0c040; font-size: 14px;"></div>
+  <button class="mode-btn" onclick="showLobby()">
+    Online Multiplayer
+    <small>Play with someone online</small>
+  </button>
+  <button class="mode-btn" onclick="startGame('2p')">
+    2 Players (Local)
+    <small>Play with a friend on this screen</small>
+  </button>
+  <button class="mode-btn" onclick="startGame('easy')">
+    vs NPC (Easy)
+    <small>AI makes random legal moves</small>
+  </button>
+  <button class="mode-btn" onclick="startGame('medium')">
+    vs NPC (Medium)
+    <small>AI with basic strategy</small>
+  </button>
+  <button class="mode-btn" onclick="startGame('hard')">
+    vs NPC (Hard)
+    <small>AI looks ahead and plays smart</small>
+  </button>
+</div>
+
+<!-- Lobby Screen -->
+<div id="lobby-screen" class="screen">
+  <h2>Online Lobby</h2>
+  <div id="lobby-list"></div>
+  <div style="display:flex; gap:12px;">
+    <button class="mode-btn" style="width:auto; padding:12px 24px;" onclick="createOnlineGame()">Create Game</button>
+    <button class="mode-btn" style="width:auto; padding:12px 24px;" onclick="leaveLobby()">Back</button>
+  </div>
+</div>
+
+<!-- Waiting Screen (after creating game) -->
+<div id="waiting-screen" class="screen">
+  <h2>Waiting for Opponent</h2>
+  <div class="spinner"></div>
+  <div id="waiting-status">Your game is listed in the lobby...</div>
+  <div id="join-requests"></div>
+  <button class="mode-btn" style="width:auto; padding:10px 24px;" onclick="cancelWaiting()">Cancel</button>
+</div>
+
+<!-- Joining Wait Screen (after joining, waiting for accept) -->
+<div id="joining-screen" class="screen">
+  <h2>Waiting for Host</h2>
+  <div class="spinner"></div>
+  <div id="joining-status">Waiting for the host to accept...</div>
+  <button class="mode-btn" style="width:auto; padding:10px 24px;" onclick="cancelJoining()">Cancel</button>
+</div>
+
+<!-- Game Area -->
+<div id="game-area">
+  <div id="score">
+    <span class="score-red">Red (You): <b id="red-count">12</b></span>
+    <span class="score-black">Black: <b id="black-count">12</b></span>
+  </div>
+  <div id="mode-label"></div>
+  <div id="status" class="red-turn">Red's turn</div>
+  <div id="board"></div>
+  <div id="controls">
+    <button onclick="leaveGame()">Menu</button>
+    <button id="restart-btn" onclick="resetGame()">Restart</button>
+    <button onclick="toggleRules()">Rules</button>
+    <button id="resign-btn" class="hidden" onclick="resignGame()">Resign</button>
+  </div>
+
+  <div id="rules" class="hidden">
+    <h3>How to Play</h3>
+    <ul>
+      <li>Pieces move <b>diagonally forward</b> one square onto dark tiles.</li>
+      <li><b>Capture</b> by jumping over an opponent's piece diagonally (forward or backward).</li>
+      <li><b>Captures are mandatory</b>. Pieces that must capture will pulse.</li>
+      <li><b>Multi-jump</b>: if another capture is available after jumping, you must continue.</li>
+      <li><b>King</b> (K): reaches the far row. Moves and captures any distance diagonally (flying king).</li>
+      <li><b>Win</b> by capturing all enemy pieces or blocking all their moves.</li>
+    </ul>
+  </div>
+</div>
+
+<!-- Disconnect Overlay -->
+<div id="disconnect-overlay">
+  <div class="disconnect-box">
+    <h3>Opponent Disconnected</h3>
+    <div>Waiting for reconnect...</div>
+    <div class="disconnect-timer" id="disconnect-timer">30</div>
+    <div style="display:flex;gap:12px;">
+      <button onclick="claimForfeitWin()">Claim Win</button>
+      <button onclick="leaveGame()">Leave Game</button>
+    </div>
+  </div>
 </div>
 
 <script>
+// ============================================================
+// Supabase Setup
+// ============================================================
+const SUPABASE_URL = 'https://xfvmotrglybopuaaybzg.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inhmdm1vdHJnbHlib3B1YWF5YnpnIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI0MzUyNzAsImV4cCI6MjA4ODAxMTI3MH0.bGh-xHr2aROd03tG1JosZ8BlDhDWDpyNWK4YB4HAX-U';
+const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+// ============================================================
+// Constants & State
+// ============================================================
 const EMPTY = 0, RED = 1, BLACK = 2, RED_KING = 3, BLACK_KING = 4;
 let board = [], turn = RED, selected = null, validMoves = [], mustCapturePieces = [], chainPiece = null, moveNum = 0;
+let gameMode = '2p';
+let npcThinking = false;
+
+// Online state
+let myUsername = localStorage.getItem('dama_username') || '';
+let myRole = null; // 'creator' or 'joiner'
+let gameId = null;
+let opponentUsername = '';
+let boardFlipped = false;
+let isOnlineGame = false;
+let gameChannel = null;
+let isReceivingMove = false;
+let lobbySubscription = null;
+let gameSubscription = null;
+let disconnectTimer = null;
+let disconnectCountdown = 30;
+let opponentPresent = false;
 
 const COLS = 'abcdefgh';
 function pos(r, c) { return COLS[c] + (8 - r); }
@@ -192,6 +433,543 @@ function isKing(p) { return p === RED_KING || p === BLACK_KING; }
 function owner(p) { return isRed(p) ? RED : isBlack(p) ? BLACK : EMPTY; }
 function opponent(t) { return t === RED ? BLACK : RED; }
 
+// ============================================================
+// Screen Management
+// ============================================================
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('game-area').style.display = 'none';
+  const el = document.getElementById(id);
+  if (el) el.classList.add('active');
+}
+
+function showGameArea() {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('game-area').style.display = 'flex';
+}
+
+// ============================================================
+// Login
+// ============================================================
+function submitLogin() {
+  const input = document.getElementById('username-input');
+  const name = input.value.trim();
+  if (!name) { input.focus(); return; }
+  myUsername = name;
+  localStorage.setItem('dama_username', myUsername);
+  showScreen('mode-select');
+  document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
+}
+
+// Auto-login if username saved
+if (myUsername) {
+  document.getElementById('username-input').value = myUsername;
+}
+
+document.getElementById('username-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') submitLogin();
+});
+
+// ============================================================
+// Lobby
+// ============================================================
+async function showLobby() {
+  showScreen('lobby-screen');
+  await refreshLobby();
+  // Subscribe to lobby changes
+  if (lobbySubscription) lobbySubscription.unsubscribe();
+  lobbySubscription = sb
+    .channel('lobby-changes')
+    .on('postgres_changes', {
+      event: '*',
+      schema: 'public',
+      table: 'games',
+      filter: 'status=in.(waiting,pending_accept)'
+    }, () => refreshLobby())
+    .subscribe();
+}
+
+async function refreshLobby() {
+  const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+  const { data: games } = await sb
+    .from('games')
+    .select('*')
+    .eq('status', 'waiting')
+    .gt('created_at', fiveMinAgo)
+    .order('created_at', { ascending: false });
+
+  const list = document.getElementById('lobby-list');
+  if (!games || games.length === 0) {
+    list.innerHTML = '<div class="lobby-empty">No games available. Create one!</div>';
+    return;
+  }
+  list.innerHTML = games
+    .filter(g => g.creator_username !== myUsername)
+    .map(g => {
+      const ago = Math.floor((Date.now() - new Date(g.created_at).getTime()) / 1000);
+      const timeStr = ago < 60 ? `${ago}s ago` : `${Math.floor(ago/60)}m ago`;
+      return `<div class="lobby-item">
+        <div>
+          <span class="creator">${escHtml(g.creator_username)}</span>
+          <span class="time">${timeStr}</span>
+        </div>
+        <button class="join-btn" onclick="joinGame('${g.id}','${escHtml(g.creator_username)}')">Join</button>
+      </div>`;
+    }).join('') || '<div class="lobby-empty">No games available. Create one!</div>';
+}
+
+function leaveLobby() {
+  if (lobbySubscription) { lobbySubscription.unsubscribe(); lobbySubscription = null; }
+  showScreen('mode-select');
+}
+
+// ============================================================
+// Create Game
+// ============================================================
+async function createOnlineGame() {
+  const { data, error } = await sb
+    .from('games')
+    .insert({ creator_username: myUsername })
+    .select()
+    .single();
+
+  if (error) { alert('Failed to create game: ' + error.message); return; }
+
+  gameId = data.id;
+  myRole = 'creator';
+  if (lobbySubscription) { lobbySubscription.unsubscribe(); lobbySubscription = null; }
+  showScreen('waiting-screen');
+  document.getElementById('join-requests').innerHTML = '';
+  document.getElementById('waiting-status').textContent = 'Your game is listed in the lobby...';
+
+  // Subscribe to this game's changes
+  if (gameSubscription) gameSubscription.unsubscribe();
+  gameSubscription = sb
+    .channel(`game-watch-${gameId}`)
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'games',
+      filter: `id=eq.${gameId}`
+    }, payload => handleGameUpdate(payload.new))
+    .subscribe();
+}
+
+function handleGameUpdate(game) {
+  if (myRole === 'creator') {
+    if (game.status === 'pending_accept' && game.joiner_username) {
+      // Someone wants to join
+      document.getElementById('waiting-status').textContent = '';
+      document.getElementById('join-requests').innerHTML = `
+        <div class="join-request">
+          <span class="name">${escHtml(game.joiner_username)}</span>
+          <span>wants to play!</span>
+          <button class="accept-btn" onclick="acceptJoin()">Accept</button>
+          <button class="decline-btn" onclick="declineJoin()">Decline</button>
+        </div>`;
+      opponentUsername = game.joiner_username;
+    }
+    if (game.status === 'playing') {
+      startOnlineGame();
+    }
+  }
+  if (myRole === 'joiner') {
+    if (game.status === 'playing') {
+      startOnlineGame();
+    }
+    if (game.status === 'waiting' && !game.joiner_username) {
+      // Declined
+      document.getElementById('joining-status').textContent = 'Host declined. Returning to lobby...';
+      setTimeout(() => showLobby(), 1500);
+    }
+  }
+}
+
+async function cancelWaiting() {
+  if (gameId) {
+    await sb.from('games').update({ status: 'abandoned' }).eq('id', gameId);
+  }
+  cleanupOnline();
+  showLobby();
+}
+
+// ============================================================
+// Join Game
+// ============================================================
+async function joinGame(id, creatorName) {
+  // Race-safe: only update if no one joined yet
+  const { data, error } = await sb
+    .from('games')
+    .update({ joiner_username: myUsername, status: 'pending_accept', joined_at: new Date().toISOString() })
+    .eq('id', id)
+    .is('joiner_username', null)
+    .select()
+    .single();
+
+  if (error || !data) {
+    alert('Could not join - someone else may have joined first.');
+    refreshLobby();
+    return;
+  }
+
+  gameId = id;
+  myRole = 'joiner';
+  opponentUsername = creatorName;
+  if (lobbySubscription) { lobbySubscription.unsubscribe(); lobbySubscription = null; }
+  showScreen('joining-screen');
+  document.getElementById('joining-status').textContent = `Waiting for ${escHtml(creatorName)} to accept...`;
+
+  // Subscribe to game updates
+  if (gameSubscription) gameSubscription.unsubscribe();
+  gameSubscription = sb
+    .channel(`game-watch-${gameId}`)
+    .on('postgres_changes', {
+      event: 'UPDATE',
+      schema: 'public',
+      table: 'games',
+      filter: `id=eq.${gameId}`
+    }, payload => handleGameUpdate(payload.new))
+    .subscribe();
+}
+
+async function cancelJoining() {
+  if (gameId) {
+    await sb.from('games')
+      .update({ joiner_username: null, status: 'waiting' })
+      .eq('id', gameId);
+  }
+  cleanupOnline();
+  showLobby();
+}
+
+// ============================================================
+// Accept / Decline
+// ============================================================
+async function acceptJoin() {
+  await sb.from('games')
+    .update({ status: 'playing', started_at: new Date().toISOString() })
+    .eq('id', gameId);
+  // startOnlineGame will be called via the subscription
+}
+
+async function declineJoin() {
+  await sb.from('games')
+    .update({ joiner_username: null, status: 'waiting' })
+    .eq('id', gameId);
+  document.getElementById('join-requests').innerHTML = '';
+  document.getElementById('waiting-status').textContent = 'Your game is listed in the lobby...';
+  opponentUsername = '';
+}
+
+// ============================================================
+// Start Online Game
+// ============================================================
+function startOnlineGame() {
+  isOnlineGame = true;
+  gameMode = 'online';
+
+  // Creator = RED (plays normally), Joiner = BLACK (board flipped)
+  if (myRole === 'creator') {
+    boardFlipped = false;
+  } else {
+    boardFlipped = true;
+  }
+
+  // Setup game channel for moves
+  if (gameChannel) { sb.removeChannel(gameChannel); }
+  gameChannel = sb.channel(`game:${gameId}`, {
+    config: { presence: { key: myUsername } }
+  });
+
+  // Listen for moves
+  gameChannel.on('broadcast', { event: 'move' }, ({ payload }) => {
+    if (payload.sender !== myUsername) {
+      handleIncomingMove(payload);
+    }
+  });
+
+  gameChannel.on('broadcast', { event: 'end_turn' }, ({ payload }) => {
+    if (payload.sender !== myUsername) {
+      handleIncomingEndTurn();
+    }
+  });
+
+  gameChannel.on('broadcast', { event: 'game_over' }, ({ payload }) => {
+    if (payload.sender !== myUsername) {
+      handleIncomingGameOver(payload);
+    }
+  });
+
+  gameChannel.on('broadcast', { event: 'resign' }, ({ payload }) => {
+    if (payload.sender !== myUsername) {
+      handleIncomingResign(payload);
+    }
+  });
+
+  // Presence for disconnect detection
+  gameChannel.on('presence', { event: 'sync' }, () => {
+    const state = gameChannel.presenceState();
+    const keys = Object.keys(state);
+    const opponentHere = keys.some(k => k !== myUsername);
+    if (opponentPresent && !opponentHere) {
+      onOpponentDisconnect();
+    } else if (!opponentPresent && opponentHere) {
+      onOpponentReconnect();
+    }
+    opponentPresent = opponentHere;
+  });
+
+  gameChannel.subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      await gameChannel.track({ username: myUsername, online_at: new Date().toISOString() });
+      opponentPresent = false; // Will be set by presence sync
+    }
+  });
+
+  // Setup UI
+  showGameArea();
+  document.getElementById('mode-label').textContent = `Online: ${myUsername} vs ${opponentUsername}`;
+  document.getElementById('restart-btn').classList.add('hidden');
+  document.getElementById('resign-btn').classList.remove('hidden');
+
+  // Update score labels
+  const myColor = myRole === 'creator' ? 'Red' : 'Black';
+  const theirColor = myRole === 'creator' ? 'Black' : 'Red';
+  document.querySelector('.score-red').innerHTML = `${escHtml(myRole === 'creator' ? myUsername : opponentUsername)} (${myRole === 'creator' ? 'Red' : 'Red'}): <b id="red-count">12</b>`;
+  document.querySelector('.score-black').innerHTML = `${escHtml(myRole === 'creator' ? opponentUsername : myUsername)} (${myRole === 'creator' ? 'Black' : 'Black'}): <b id="black-count">12</b>`;
+
+  // Update score labels for flipped view
+  if (boardFlipped) {
+    document.querySelector('.score-red').innerHTML = `You (${escHtml(myUsername)}): <b id="red-count">12</b>`;
+    document.querySelector('.score-black').innerHTML = `${escHtml(opponentUsername)}: <b id="black-count">12</b>`;
+  } else {
+    document.querySelector('.score-red').innerHTML = `You (${escHtml(myUsername)}): <b id="red-count">12</b>`;
+    document.querySelector('.score-black').innerHTML = `${escHtml(opponentUsername)}: <b id="black-count">12</b>`;
+  }
+
+  resetGame();
+}
+
+// ============================================================
+// My turn logic for online
+// ============================================================
+function isMyTurn() {
+  if (!isOnlineGame) return true;
+  // Creator = RED, Joiner = BLACK
+  if (myRole === 'creator') return turn === RED;
+  return turn === BLACK;
+}
+
+// ============================================================
+// Move broadcast
+// ============================================================
+function broadcastMove(fromRow, fromCol, move) {
+  if (!isOnlineGame || !gameChannel) return;
+  gameChannel.send({
+    type: 'broadcast',
+    event: 'move',
+    payload: {
+      sender: myUsername,
+      fromRow, fromCol,
+      toRow: move.row, toCol: move.col,
+      capturedRow: move.capturedRow, capturedCol: move.capturedCol,
+      isChain: !!chainPiece
+    }
+  });
+}
+
+function broadcastEndTurn() {
+  if (!isOnlineGame || !gameChannel) return;
+  gameChannel.send({
+    type: 'broadcast',
+    event: 'end_turn',
+    payload: { sender: myUsername }
+  });
+}
+
+function broadcastGameOver(winnerName) {
+  if (!isOnlineGame || !gameChannel) return;
+  gameChannel.send({
+    type: 'broadcast',
+    event: 'game_over',
+    payload: { sender: myUsername, winner: winnerName }
+  });
+}
+
+// ============================================================
+// Incoming move handling
+// ============================================================
+function handleIncomingMove(payload) {
+  const { fromRow, fromCol, toRow, toCol, capturedRow, capturedCol, isChain } = payload;
+  isReceivingMove = true;
+
+  if (isChain) {
+    chainPiece = { row: fromRow, col: fromCol };
+  } else {
+    selected = { row: fromRow, col: fromCol };
+  }
+
+  const move = { row: toRow, col: toCol };
+  if (capturedRow !== undefined && capturedRow !== null) {
+    move.capturedRow = capturedRow;
+    move.capturedCol = capturedCol;
+  }
+
+  validMoves = [move]; // So movePiece finds it valid
+  movePiece(move);
+  isReceivingMove = false;
+}
+
+function handleIncomingEndTurn() {
+  // The opponent's chain is done - make sure we end the turn
+  // (movePiece already called endTurn if no more captures)
+  // This is a safety net in case of desync
+}
+
+function handleIncomingGameOver(payload) {
+  const statusEl = document.getElementById('status');
+  if (payload.winner === myUsername) {
+    statusEl.textContent = 'You win!';
+  } else {
+    statusEl.textContent = `${escHtml(payload.winner)} wins!`;
+  }
+  statusEl.className = '';
+  statusEl.style.background = '#2a5a2a';
+}
+
+function handleIncomingResign(payload) {
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = `${escHtml(payload.sender)} resigned. You win!`;
+  statusEl.className = '';
+  statusEl.style.background = '#2a5a2a';
+  finishOnlineGame(myUsername);
+}
+
+// ============================================================
+// Resign
+// ============================================================
+async function resignGame() {
+  if (!isOnlineGame) return;
+  if (!confirm('Are you sure you want to resign?')) return;
+  gameChannel.send({
+    type: 'broadcast',
+    event: 'resign',
+    payload: { sender: myUsername }
+  });
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = 'You resigned.';
+  statusEl.className = '';
+  statusEl.style.background = '#5a2a2a';
+  finishOnlineGame(opponentUsername);
+}
+
+// ============================================================
+// Disconnect handling
+// ============================================================
+function onOpponentDisconnect() {
+  if (document.getElementById('status').textContent.includes('win') ||
+      document.getElementById('status').textContent.includes('resigned')) return;
+
+  disconnectCountdown = 30;
+  document.getElementById('disconnect-overlay').classList.add('active');
+  document.getElementById('disconnect-timer').textContent = disconnectCountdown;
+  disconnectTimer = setInterval(() => {
+    disconnectCountdown--;
+    document.getElementById('disconnect-timer').textContent = disconnectCountdown;
+    if (disconnectCountdown <= 0) {
+      clearInterval(disconnectTimer);
+      claimForfeitWin();
+    }
+  }, 1000);
+}
+
+function onOpponentReconnect() {
+  if (disconnectTimer) { clearInterval(disconnectTimer); disconnectTimer = null; }
+  document.getElementById('disconnect-overlay').classList.remove('active');
+}
+
+async function claimForfeitWin() {
+  if (disconnectTimer) { clearInterval(disconnectTimer); disconnectTimer = null; }
+  document.getElementById('disconnect-overlay').classList.remove('active');
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = 'Opponent forfeited. You win!';
+  statusEl.className = '';
+  statusEl.style.background = '#2a5a2a';
+  finishOnlineGame(myUsername);
+}
+
+async function finishOnlineGame(winnerName) {
+  if (gameId) {
+    await sb.from('games').update({
+      status: 'finished',
+      winner_username: winnerName,
+      finished_at: new Date().toISOString()
+    }).eq('id', gameId);
+  }
+}
+
+// ============================================================
+// Cleanup
+// ============================================================
+function cleanupOnline() {
+  if (gameChannel) { sb.removeChannel(gameChannel); gameChannel = null; }
+  if (gameSubscription) { gameSubscription.unsubscribe(); gameSubscription = null; }
+  if (lobbySubscription) { lobbySubscription.unsubscribe(); lobbySubscription = null; }
+  if (disconnectTimer) { clearInterval(disconnectTimer); disconnectTimer = null; }
+  document.getElementById('disconnect-overlay').classList.remove('active');
+  gameId = null;
+  myRole = null;
+  opponentUsername = '';
+  isOnlineGame = false;
+  boardFlipped = false;
+  isReceivingMove = false;
+  opponentPresent = false;
+}
+
+// ============================================================
+// Game Logic (original + online hooks)
+// ============================================================
+function startGame(mode) {
+  gameMode = mode;
+  isOnlineGame = false;
+  boardFlipped = false;
+  showGameArea();
+  const labels = { '2p': '2 Players', 'easy': 'vs NPC (Easy)', 'medium': 'vs NPC (Medium)', 'hard': 'vs NPC (Hard)' };
+  document.getElementById('mode-label').textContent = labels[mode];
+  document.getElementById('restart-btn').classList.remove('hidden');
+  document.getElementById('resign-btn').classList.add('hidden');
+  // Reset score labels
+  document.querySelector('.score-red').innerHTML = 'Red (You): <b id="red-count">12</b>';
+  document.querySelector('.score-black').innerHTML = 'Black: <b id="black-count">12</b>';
+  resetGame();
+}
+
+function leaveGame() {
+  if (isOnlineGame) {
+    if (!document.getElementById('status').textContent.includes('win') &&
+        !document.getElementById('status').textContent.includes('resigned')) {
+      if (!confirm('Leave the game? This counts as a resignation.')) return;
+      gameChannel?.send({
+        type: 'broadcast',
+        event: 'resign',
+        payload: { sender: myUsername }
+      });
+      finishOnlineGame(opponentUsername);
+    }
+    cleanupOnline();
+    showScreen('mode-select');
+    document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
+  } else {
+    backToMenu();
+  }
+}
+
+function backToMenu() {
+  showScreen('mode-select');
+  document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
+  npcThinking = false;
+}
+
 function initBoard() {
   board = Array.from({ length: 8 }, () => Array(8).fill(EMPTY));
   for (let r = 0; r < 3; r++)
@@ -202,38 +980,34 @@ function initBoard() {
       if ((r + c) % 2 === 1) board[r][c] = RED;
 }
 
-function getCaptures(r, c) {
-  const p = board[r][c];
+function getCaptures(r, c, brd) {
+  const b = brd || board;
+  const p = b[r][c];
   if (p === EMPTY) return [];
   const dirs = [[-1,-1],[-1,1],[1,-1],[1,1]];
   const caps = [];
 
   if (isKing(p)) {
-    // Flying king: slide along diagonal, find first enemy, land on any empty beyond it
     for (const [dr, dc] of dirs) {
       let sr = r + dr, sc = c + dc;
-      // Slide over empty squares to find an enemy
-      while (sr >= 0 && sr <= 7 && sc >= 0 && sc <= 7 && board[sr][sc] === EMPTY) {
+      while (sr >= 0 && sr <= 7 && sc >= 0 && sc <= 7 && b[sr][sc] === EMPTY) {
         sr += dr; sc += dc;
       }
-      // Found an enemy piece?
-      if (sr >= 0 && sr <= 7 && sc >= 0 && sc <= 7 && owner(board[sr][sc]) !== owner(p)) {
+      if (sr >= 0 && sr <= 7 && sc >= 0 && sc <= 7 && owner(b[sr][sc]) !== owner(p)) {
         const er = sr, ec = sc;
-        // All empty squares beyond the enemy are valid landing spots
         let lr = er + dr, lc = ec + dc;
-        while (lr >= 0 && lr <= 7 && lc >= 0 && lc <= 7 && board[lr][lc] === EMPTY) {
+        while (lr >= 0 && lr <= 7 && lc >= 0 && lc <= 7 && b[lr][lc] === EMPTY) {
           caps.push({ row: lr, col: lc, capturedRow: er, capturedCol: ec });
           lr += dr; lc += dc;
         }
       }
     }
   } else {
-    // Regular piece: capture in all 4 directions, jump exactly 1 over enemy
     for (const [dr, dc] of dirs) {
       const mr = r + dr, mc = c + dc;
       const lr = r + 2*dr, lc = c + 2*dc;
       if (lr < 0 || lr > 7 || lc < 0 || lc > 7) continue;
-      if (board[mr][mc] !== EMPTY && owner(board[mr][mc]) !== owner(p) && board[lr][lc] === EMPTY) {
+      if (b[mr][mc] !== EMPTY && owner(b[mr][mc]) !== owner(p) && b[lr][lc] === EMPTY) {
         caps.push({ row: lr, col: lc, capturedRow: mr, capturedCol: mc });
       }
     }
@@ -241,27 +1015,26 @@ function getCaptures(r, c) {
   return caps;
 }
 
-function getMoves(r, c) {
-  const p = board[r][c];
+function getMoves(r, c, brd) {
+  const b = brd || board;
+  const p = b[r][c];
   if (p === EMPTY) return [];
   const moves = [];
 
   if (isKing(p)) {
-    // Flying king: slide any number of squares in all 4 diagonals
     const dirs = [[-1,-1],[-1,1],[1,-1],[1,1]];
     for (const [dr, dc] of dirs) {
       let nr = r + dr, nc = c + dc;
-      while (nr >= 0 && nr <= 7 && nc >= 0 && nc <= 7 && board[nr][nc] === EMPTY) {
+      while (nr >= 0 && nr <= 7 && nc >= 0 && nc <= 7 && b[nr][nc] === EMPTY) {
         moves.push({ row: nr, col: nc });
         nr += dr; nc += dc;
       }
     }
   } else {
-    // Regular piece: one square forward only
     const dirs = isRed(p) ? [[-1,-1],[-1,1]] : [[1,-1],[1,1]];
     for (const [dr, dc] of dirs) {
       const nr = r + dr, nc = c + dc;
-      if (nr >= 0 && nr <= 7 && nc >= 0 && nc <= 7 && board[nr][nc] === EMPTY) {
+      if (nr >= 0 && nr <= 7 && nc >= 0 && nc <= 7 && b[nr][nc] === EMPTY) {
         moves.push({ row: nr, col: nc });
       }
     }
@@ -278,9 +1051,10 @@ function findMustCapture() {
   return pieces;
 }
 
-function promote(r, c) {
-  if (board[r][c] === RED && r === 0) board[r][c] = RED_KING;
-  if (board[r][c] === BLACK && r === 7) board[r][c] = BLACK_KING;
+function promote(r, c, brd) {
+  const b = brd || board;
+  if (b[r][c] === RED && r === 0) b[r][c] = RED_KING;
+  if (b[r][c] === BLACK && r === 7) b[r][c] = BLACK_KING;
 }
 
 function checkWin() {
@@ -296,7 +1070,6 @@ function checkWin() {
   if (blackCount === 0) return RED;
   if (redCount === 0) return BLACK;
 
-  // Check if current player has any moves
   let hasMoves = false;
   for (let r = 0; r < 8 && !hasMoves; r++)
     for (let c = 0; c < 8 && !hasMoves; c++)
@@ -308,116 +1081,366 @@ function checkWin() {
 }
 
 function selectPiece(r, c) {
-  if (chainPiece) return; // mid-chain, can't select another
+  if (chainPiece) return;
   if (owner(board[r][c]) !== turn) return;
   if (mustCapturePieces.length > 0 && !mustCapturePieces.some(p => p.row === r && p.col === c)) return;
 
   selected = { row: r, col: c };
   const caps = getCaptures(r, c);
   validMoves = caps.length > 0 ? caps : (mustCapturePieces.length > 0 ? [] : getMoves(r, c));
-  const turnName = turn === RED ? 'Red' : 'Black';
-  console.log(`[SELECT] ${turnName} selects ${pName(board[r][c])} at ${pos(r,c)} | valid moves: ${validMoves.map(m => m.capturedRow !== undefined ? pos(m.row,m.col)+'(capture '+pos(m.capturedRow,m.capturedCol)+')' : pos(m.row,m.col)).join(', ') || 'none'}`);
   render();
 }
 
 function movePiece(move) {
   const { row: fr, col: fc } = chainPiece || selected;
   const movingPiece = board[fr][fc];
-  const turnName = turn === RED ? 'Red' : 'Black';
   moveNum++;
+
+  // Broadcast if this is our move (not receiving)
+  if (isOnlineGame && !isReceivingMove) {
+    broadcastMove(fr, fc, move);
+  }
 
   board[move.row][move.col] = board[fr][fc];
   board[fr][fc] = EMPTY;
 
   let captured = false;
   if (move.capturedRow !== undefined) {
-    const capturedPiece = board[move.capturedRow][move.capturedCol];
     board[move.capturedRow][move.capturedCol] = EMPTY;
     captured = true;
-    console.log(`[MOVE #${moveNum}] ${turnName} ${pName(movingPiece)} ${pos(fr,fc)} -> ${pos(move.row,move.col)} | CAPTURES ${pName(capturedPiece)} at ${pos(move.capturedRow,move.capturedCol)}`);
-  } else {
-    console.log(`[MOVE #${moveNum}] ${turnName} ${pName(movingPiece)} ${pos(fr,fc)} -> ${pos(move.row,move.col)}`);
   }
 
   const wasPiece = board[move.row][move.col];
   promote(move.row, move.col);
-  if (board[move.row][move.col] !== wasPiece) {
-    console.log(`[PROMOTE] ${pName(wasPiece)} at ${pos(move.row,move.col)} -> ${pName(board[move.row][move.col])}`);
-  }
 
-  // Check for chain captures
   if (captured) {
     const moreCaps = getCaptures(move.row, move.col);
     if (moreCaps.length > 0) {
-      console.log(`[CHAIN] ${turnName} must continue capturing from ${pos(move.row,move.col)} | options: ${moreCaps.map(m => pos(m.row,m.col)+'(capture '+pos(m.capturedRow,m.capturedCol)+')').join(', ')}`);
       chainPiece = { row: move.row, col: move.col };
       selected = chainPiece;
       validMoves = moreCaps;
       render();
+      // If NPC chain capture, continue after delay
+      if (isNpcTurn()) {
+        setTimeout(() => npcChainCapture(), 400);
+      }
       return;
     }
   }
 
-  // End turn
+  endTurn();
+}
+
+function endTurn() {
+  // Broadcast end turn for online
+  if (isOnlineGame && !isReceivingMove) {
+    broadcastEndTurn();
+  }
+
   chainPiece = null;
   selected = null;
   validMoves = [];
   turn = opponent(turn);
   mustCapturePieces = findMustCapture();
-  const nextName = turn === RED ? 'Red' : 'Black';
-  if (mustCapturePieces.length > 0) {
-    console.log(`[TURN] Now ${nextName}'s turn | MUST CAPTURE with: ${mustCapturePieces.map(p => pos(p.row,p.col)).join(', ')}`);
-  } else {
-    console.log(`[TURN] Now ${nextName}'s turn`);
-  }
 
   const winner = checkWin();
   if (winner) {
     render();
-    const name = winner === RED ? 'Red' : 'Black';
-    document.getElementById('status').textContent = `${name} wins!`;
-    document.getElementById('status').className = '';
-    document.getElementById('status').style.background = '#2a5a2a';
+    const statusEl = document.getElementById('status');
+    if (isOnlineGame) {
+      const winnerName = winner === RED
+        ? (myRole === 'creator' ? myUsername : opponentUsername)
+        : (myRole === 'creator' ? opponentUsername : myUsername);
+      if (winnerName === myUsername) {
+        statusEl.textContent = 'You win!';
+      } else {
+        statusEl.textContent = `${escHtml(winnerName)} wins!`;
+      }
+      if (!isReceivingMove) {
+        broadcastGameOver(winnerName);
+        finishOnlineGame(winnerName);
+      }
+    } else {
+      const name = winner === RED ? 'Red' : 'Black';
+      statusEl.textContent = `${name} wins!`;
+    }
+    statusEl.className = '';
+    statusEl.style.background = '#2a5a2a';
+    npcThinking = false;
     return;
   }
   render();
+
+  // Trigger NPC if it's Black's turn
+  if (isNpcTurn()) {
+    npcThinking = true;
+    setTimeout(() => npcMove(), 500);
+  }
+}
+
+function isNpcTurn() {
+  return gameMode !== '2p' && gameMode !== 'online' && turn === BLACK;
 }
 
 function cellClick(r, c) {
-  // Check if game is over
-  if (document.getElementById('status').textContent.includes('wins')) return;
+  if (document.getElementById('status').textContent.includes('win') ||
+      document.getElementById('status').textContent.includes('resigned')) return;
+  if (npcThinking) return;
 
-  const p = board[r][c];
-  // Clicking on a valid move target
-  const move = validMoves.find(m => m.row === r && m.col === c);
+  // Online: block clicks when not my turn
+  if (isOnlineGame && !isMyTurn()) return;
+
+  // Convert display coords to logical coords if flipped
+  let lr = r, lc = c;
+  if (boardFlipped) {
+    lr = 7 - r;
+    lc = 7 - c;
+  }
+
+  const p = board[lr][lc];
+  const move = validMoves.find(m => m.row === lr && m.col === lc);
   if (move) {
     movePiece(move);
     return;
   }
-  // Clicking on own piece (and not in chain)
   if (owner(p) === turn && !chainPiece) {
-    selectPiece(r, c);
+    selectPiece(lr, lc);
   }
 }
 
+// ============================================================
+// NPC AI (unchanged)
+// ============================================================
+function npcChainCapture() {
+  if (!chainPiece || validMoves.length === 0) return;
+  const move = npcPickCapture(validMoves, chainPiece.row, chainPiece.col);
+  movePiece(move);
+}
+
+function npcMove() {
+  npcThinking = true;
+  if (gameMode === 'easy') npcEasy();
+  else if (gameMode === 'medium') npcMedium();
+  else if (gameMode === 'hard') npcHard();
+}
+
+function npcEasy() {
+  const allMoves = getAllMoves(BLACK);
+  if (allMoves.length === 0) return;
+  const pick = allMoves[Math.floor(Math.random() * allMoves.length)];
+  selected = { row: pick.fromRow, col: pick.fromCol };
+  npcThinking = false;
+  movePiece(pick.move);
+}
+
+function npcMedium() {
+  const allMoves = getAllMoves(BLACK);
+  if (allMoves.length === 0) return;
+  let best = null, bestScore = -Infinity;
+  for (const m of allMoves) {
+    let score = 0;
+    if (m.move.capturedRow !== undefined) {
+      score += 10;
+      if (isKing(board[m.move.capturedRow][m.move.capturedCol])) score += 5;
+      score += countChainCaptures(m.fromRow, m.fromCol, m.move) * 8;
+    }
+    score += m.move.row * 0.5;
+    if (m.move.row === 7 && !isKing(board[m.fromRow][m.fromCol])) score += 6;
+    if (isKing(board[m.fromRow][m.fromCol])) score += 1;
+    const centerDist = Math.abs(m.move.col - 3.5) + Math.abs(m.move.row - 3.5);
+    score -= centerDist * 0.3;
+    score += Math.random() * 1.5;
+    if (score > bestScore) { bestScore = score; best = m; }
+  }
+  selected = { row: best.fromRow, col: best.fromCol };
+  npcThinking = false;
+  movePiece(best.move);
+}
+
+function npcHard() {
+  const depth = 5;
+  const allMoves = getAllMoves(BLACK);
+  if (allMoves.length === 0) return;
+  let bestMove = null, bestScore = -Infinity;
+  for (const m of allMoves) {
+    const simBoard = cloneBoard();
+    simulateMove(simBoard, m.fromRow, m.fromCol, m.move);
+    const score = minimax(simBoard, depth - 1, -Infinity, Infinity, false);
+    if (score > bestScore) { bestScore = score; bestMove = m; }
+  }
+  selected = { row: bestMove.fromRow, col: bestMove.fromCol };
+  npcThinking = false;
+  movePiece(bestMove.move);
+}
+
+function minimax(brd, depth, alpha, beta, isMaximizing) {
+  if (depth === 0) return evaluateBoard(brd);
+  const side = isMaximizing ? BLACK : RED;
+  const moves = getAllMovesOnBoard(brd, side);
+  if (moves.length === 0) return isMaximizing ? -1000 : 1000;
+  if (isMaximizing) {
+    let maxEval = -Infinity;
+    for (const m of moves) {
+      const newBrd = cloneBoardFrom(brd);
+      simulateMove(newBrd, m.fromRow, m.fromCol, m.move);
+      const ev = minimax(newBrd, depth - 1, alpha, beta, false);
+      maxEval = Math.max(maxEval, ev);
+      alpha = Math.max(alpha, ev);
+      if (beta <= alpha) break;
+    }
+    return maxEval;
+  } else {
+    let minEval = Infinity;
+    for (const m of moves) {
+      const newBrd = cloneBoardFrom(brd);
+      simulateMove(newBrd, m.fromRow, m.fromCol, m.move);
+      const ev = minimax(newBrd, depth - 1, alpha, beta, true);
+      minEval = Math.min(minEval, ev);
+      beta = Math.min(beta, ev);
+      if (beta <= alpha) break;
+    }
+    return minEval;
+  }
+}
+
+function evaluateBoard(brd) {
+  let score = 0;
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++) {
+      const p = brd[r][c];
+      if (p === BLACK) score += 10 + r * 0.5;
+      else if (p === BLACK_KING) score += 25;
+      else if (p === RED) score -= 10 + (7 - r) * 0.5;
+      else if (p === RED_KING) score -= 25;
+    }
+  return score;
+}
+
+function cloneBoard() { return board.map(row => [...row]); }
+function cloneBoardFrom(brd) { return brd.map(row => [...row]); }
+
+function simulateMove(brd, fr, fc, move) {
+  brd[move.row][move.col] = brd[fr][fc];
+  brd[fr][fc] = EMPTY;
+  if (move.capturedRow !== undefined) {
+    brd[move.capturedRow][move.capturedCol] = EMPTY;
+    let caps = getCaptures(move.row, move.col, brd);
+    while (caps.length > 0) {
+      const next = caps[0];
+      brd[next.row][next.col] = brd[move.row][move.col];
+      brd[move.row][move.col] = EMPTY;
+      brd[next.capturedRow][next.capturedCol] = EMPTY;
+      move = next;
+      caps = getCaptures(move.row, move.col, brd);
+    }
+  }
+  promote(move.row, move.col, brd);
+}
+
+function getAllMoves(side) {
+  const result = [];
+  let hasCapture = false;
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++)
+      if (owner(board[r][c]) === side) {
+        const caps = getCaptures(r, c);
+        for (const m of caps) { result.push({ fromRow: r, fromCol: c, move: m }); hasCapture = true; }
+      }
+  if (hasCapture) return result;
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++)
+      if (owner(board[r][c]) === side) {
+        const moves = getMoves(r, c);
+        for (const m of moves) result.push({ fromRow: r, fromCol: c, move: m });
+      }
+  return result;
+}
+
+function getAllMovesOnBoard(brd, side) {
+  const result = [];
+  let hasCapture = false;
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++)
+      if (owner(brd[r][c]) === side) {
+        const caps = getCaptures(r, c, brd);
+        for (const m of caps) { result.push({ fromRow: r, fromCol: c, move: m }); hasCapture = true; }
+      }
+  if (hasCapture) return result;
+  for (let r = 0; r < 8; r++)
+    for (let c = 0; c < 8; c++)
+      if (owner(brd[r][c]) === side) {
+        const moves = getMoves(r, c, brd);
+        for (const m of moves) result.push({ fromRow: r, fromCol: c, move: m });
+      }
+  return result;
+}
+
+function countChainCaptures(fromR, fromC, move) {
+  const brd = cloneBoard();
+  brd[move.row][move.col] = brd[fromR][fromC];
+  brd[fromR][fromC] = EMPTY;
+  if (move.capturedRow !== undefined) brd[move.capturedRow][move.capturedCol] = EMPTY;
+  promote(move.row, move.col, brd);
+  let count = 0, cr = move.row, cc = move.col;
+  let caps = getCaptures(cr, cc, brd);
+  while (caps.length > 0) {
+    count++;
+    const next = caps[0];
+    brd[next.row][next.col] = brd[cr][cc];
+    brd[cr][cc] = EMPTY;
+    brd[next.capturedRow][next.capturedCol] = EMPTY;
+    cr = next.row; cc = next.col;
+    promote(cr, cc, brd);
+    caps = getCaptures(cr, cc, brd);
+  }
+  return count;
+}
+
+function npcPickCapture(moves, fromR, fromC) {
+  if (gameMode === 'easy') return moves[Math.floor(Math.random() * moves.length)];
+  let best = moves[0], bestChain = -1;
+  for (const m of moves) {
+    const chain = countChainCaptures(fromR, fromC, m);
+    if (chain > bestChain) { bestChain = chain; best = m; }
+  }
+  return best;
+}
+
+// ============================================================
+// Render (with board flip + visual color swap)
+// ============================================================
 function render() {
   const el = document.getElementById('board');
   el.innerHTML = '';
-  for (let r = 0; r < 8; r++) {
-    for (let c = 0; c < 8; c++) {
+  for (let dr = 0; dr < 8; dr++) {
+    for (let dc = 0; dc < 8; dc++) {
+      // Map display coords to logical coords
+      const r = boardFlipped ? 7 - dr : dr;
+      const c = boardFlipped ? 7 - dc : dc;
+
       const cell = document.createElement('div');
-      cell.className = 'cell ' + ((r + c) % 2 === 0 ? 'light' : 'dark');
+      // Cell color based on display position
+      cell.className = 'cell ' + ((dr + dc) % 2 === 0 ? 'light' : 'dark');
 
       const isValidMove = validMoves.some(m => m.row === r && m.col === c);
       const isCapture = validMoves.some(m => m.row === r && m.col === c && m.capturedRow !== undefined);
       if (isCapture) cell.classList.add('capture-highlight');
       else if (isValidMove) cell.classList.add('highlight');
 
-      cell.onclick = () => cellClick(r, c);
+      // Use display coords for click handler
+      cell.onclick = () => cellClick(dr, dc);
 
       if (board[r][c] !== EMPTY) {
         const piece = document.createElement('div');
-        piece.className = 'piece ' + (isRed(board[r][c]) ? 'red' : 'black');
+        // Visual color swap: if board is flipped, swap displayed colors
+        // so the player always sees their pieces as red at the bottom
+        let displayColor;
+        if (boardFlipped) {
+          displayColor = isRed(board[r][c]) ? 'black' : 'red';
+        } else {
+          displayColor = isRed(board[r][c]) ? 'red' : 'black';
+        }
+        piece.className = 'piece ' + displayColor;
         if (selected && selected.row === r && selected.col === c) piece.classList.add('selected');
         if (mustCapturePieces.some(p => p.row === r && p.col === c) && !chainPiece) piece.classList.add('must-capture');
         if (isKing(board[r][c])) piece.textContent = 'K';
@@ -426,11 +1449,21 @@ function render() {
       el.appendChild(cell);
     }
   }
+
   const statusEl = document.getElementById('status');
-  if (!statusEl.textContent.includes('wins')) {
-    const name = turn === RED ? 'Red' : 'Black';
-    statusEl.textContent = chainPiece ? `${name}: continue capturing!` : `${name}'s turn`;
-    statusEl.className = turn === RED ? 'red-turn' : 'black-turn';
+  if (!statusEl.textContent.includes('win') && !statusEl.textContent.includes('resigned')) {
+    if (isOnlineGame) {
+      const myTurn = isMyTurn();
+      statusEl.textContent = chainPiece
+        ? (myTurn ? 'Your turn: continue capturing!' : `${escHtml(opponentUsername)}: capturing...`)
+        : (myTurn ? 'Your turn' : `${escHtml(opponentUsername)}'s turn`);
+      statusEl.className = myTurn ? 'red-turn' : 'black-turn';
+    } else {
+      const name = turn === RED ? 'Red' : 'Black';
+      const npcLabel = isNpcTurn() ? ' (NPC thinking...)' : '';
+      statusEl.textContent = chainPiece ? `${name}: continue capturing!` : `${name}'s turn${npcLabel}`;
+      statusEl.className = turn === RED ? 'red-turn' : 'black-turn';
+    }
     statusEl.style.background = '';
   }
 }
@@ -441,10 +1474,11 @@ function resetGame() {
   validMoves = [];
   chainPiece = null;
   moveNum = 0;
+  npcThinking = false;
+  isReceivingMove = false;
   initBoard();
   mustCapturePieces = findMustCapture();
   document.getElementById('status').style.background = '';
-  console.log('[GAME] New game started. Red goes first.');
   render();
 }
 
@@ -452,7 +1486,17 @@ function toggleRules() {
   document.getElementById('rules').classList.toggle('hidden');
 }
 
-resetGame();
+function escHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// Auto-show login or mode-select on load
+if (myUsername) {
+  showScreen('mode-select');
+  document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
+}
 </script>
 </body>
 </html>
