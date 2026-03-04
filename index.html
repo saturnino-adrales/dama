@@ -3,6 +3,9 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
 <title>Dama - Checkers</title>
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
@@ -45,7 +48,7 @@
   }
   .mode-btn:hover { background: #1a3a6e; border-color: #f0c040; }
   .mode-btn small { display: block; font-size: 12px; color: #888; margin-top: 4px; }
-  #game-area { display: none; flex-direction: column; align-items: center; gap: 16px; }
+  #game-area { display: none; flex-direction: column; align-items: center; gap: 16px; position: relative; }
   #status {
     font-size: 20px;
     min-height: 32px;
@@ -151,6 +154,8 @@
   #controls {
     display: flex;
     gap: 12px;
+    flex-wrap: wrap;
+    justify-content: center;
   }
   button {
     padding: 10px 24px;
@@ -260,30 +265,109 @@
   .decline-btn { background: #5a2a2a; border-color: #8a4a4a; }
   .decline-btn:hover { background: #7a3a3a; }
 
-  /* Disconnect overlay */
-  #disconnect-overlay {
-    display: none;
-    position: fixed;
+  /* Status dot */
+  .status-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    display: inline-block;
+    margin-left: 6px;
+    vertical-align: middle;
+  }
+  .status-dot.online { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
+  .status-dot.offline { background: #e74c3c; box-shadow: 0 0 6px #e74c3c; }
+
+  /* Win score */
+  #win-score {
+    font-size: 15px;
+    color: #f0c040;
+    padding: 4px 16px;
+    border-radius: 6px;
+    background: #0f1a2e;
+    border: 1px solid #f0c04033;
+    text-align: center;
+  }
+
+  /* Board disabled (waiting for opponent) */
+  #board.disabled {
+    opacity: 0.5;
+    pointer-events: none;
+  }
+
+  /* Join request overlay on board */
+  .board-overlay {
+    position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
     background: rgba(0,0,0,0.7);
-    z-index: 100;
+    z-index: 10;
+    display: flex;
     justify-content: center;
     align-items: center;
+    border-radius: 4px;
   }
-  #disconnect-overlay.active { display: flex; }
-  .disconnect-box {
+  .board-overlay-box {
     background: #16213e;
     border: 2px solid #f0c040;
     border-radius: 12px;
-    padding: 32px;
+    padding: 24px 32px;
     text-align: center;
     display: flex;
     flex-direction: column;
-    gap: 16px;
+    gap: 12px;
     align-items: center;
   }
-  .disconnect-box h3 { color: #e74c3c; }
-  .disconnect-timer { font-size: 24px; color: #f0c040; }
+  .board-overlay-box h3 { color: #f0c040; font-size: 18px; }
+
+  /* Rematch overlay */
+  .rematch-overlay {
+    position: absolute;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 10;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    border-radius: 4px;
+  }
+
+  /* Rejoin button */
+  .rejoin-btn {
+    background: #2a4a6a;
+    border-color: #4a8aaa;
+    color: #7ac4ff;
+    animation: pulse-rejoin 1.5s infinite alternate;
+  }
+  .rejoin-btn:hover { background: #3a5a7a; }
+  @keyframes pulse-rejoin {
+    from { box-shadow: 0 0 4px rgba(122, 196, 255, 0.3); }
+    to   { box-shadow: 0 0 12px rgba(122, 196, 255, 0.6); }
+  }
+
+  /* AI move button */
+  .ai-btn {
+    background: #4a2a6a;
+    border-color: #8a4aaa;
+    color: #c49aff;
+  }
+  .ai-btn:hover { background: #5a3a7a; }
+
+  /* Update button */
+  #update-btn {
+    position: fixed;
+    bottom: 12px;
+    right: 12px;
+    padding: 6px 14px;
+    font-size: 12px;
+    background: #0f1a2e;
+    border: 1px solid #333;
+    border-radius: 6px;
+    color: #666;
+    cursor: pointer;
+    z-index: 50;
+    opacity: 0.6;
+    transition: opacity 0.2s;
+  }
+  #update-btn:hover { opacity: 1; border-color: #f0c040; color: #e0e0e0; }
 </style>
 </head>
 <body>
@@ -301,6 +385,7 @@
 <div id="mode-select" class="screen">
   <h2>Select Mode</h2>
   <div id="username-display" style="color: #f0c040; font-size: 14px;"></div>
+  <div id="rejoin-container"></div>
   <button class="mode-btn" onclick="showLobby()">
     Online Multiplayer
     <small>Play with someone online</small>
@@ -333,15 +418,6 @@
   </div>
 </div>
 
-<!-- Waiting Screen (after creating game) -->
-<div id="waiting-screen" class="screen">
-  <h2>Waiting for Opponent</h2>
-  <div class="spinner"></div>
-  <div id="waiting-status">Your game is listed in the lobby...</div>
-  <div id="join-requests"></div>
-  <button class="mode-btn" style="width:auto; padding:10px 24px;" onclick="cancelWaiting()">Cancel</button>
-</div>
-
 <!-- Joining Wait Screen (after joining, waiting for accept) -->
 <div id="joining-screen" class="screen">
   <h2>Waiting for Host</h2>
@@ -352,9 +428,10 @@
 
 <!-- Game Area -->
 <div id="game-area">
+  <div id="win-score" class="hidden"></div>
   <div id="score">
     <span class="score-red">Red (You): <b id="red-count">12</b></span>
-    <span class="score-black">Black: <b id="black-count">12</b></span>
+    <span class="score-black">Black: <b id="black-count">12</b> <span id="opponent-status-dot" class="status-dot hidden"></span></span>
   </div>
   <div id="mode-label"></div>
   <div id="status" class="red-turn">Red's turn</div>
@@ -364,7 +441,10 @@
     <button id="restart-btn" onclick="resetGame()">Restart</button>
     <button onclick="toggleRules()">Rules</button>
     <button id="resign-btn" class="hidden" onclick="resignGame()">Resign</button>
+    <button id="rematch-btn" class="hidden" onclick="requestRematch()">Rematch</button>
+    <button id="ai-move-btn" class="hidden ai-btn" onclick="aiAssistMove()">AI Move</button>
   </div>
+  <div id="board-overlay-container"></div>
 
   <div id="rules" class="hidden">
     <h3>How to Play</h3>
@@ -376,19 +456,6 @@
       <li><b>King</b> (K): reaches the far row. Moves and captures any distance diagonally (flying king).</li>
       <li><b>Win</b> by capturing all enemy pieces or blocking all their moves.</li>
     </ul>
-  </div>
-</div>
-
-<!-- Disconnect Overlay -->
-<div id="disconnect-overlay">
-  <div class="disconnect-box">
-    <h3>Opponent Disconnected</h3>
-    <div>Waiting for reconnect...</div>
-    <div class="disconnect-timer" id="disconnect-timer">30</div>
-    <div style="display:flex;gap:12px;">
-      <button onclick="claimForfeitWin()">Claim Win</button>
-      <button onclick="leaveGame()">Leave Game</button>
-    </div>
   </div>
 </div>
 
@@ -419,9 +486,18 @@ let gameChannel = null;
 let isReceivingMove = false;
 let lobbySubscription = null;
 let gameSubscription = null;
-let disconnectTimer = null;
-let disconnectCountdown = 30;
 let opponentPresent = false;
+let waitingForOpponent = false;
+
+// Win counter (session scores)
+let myWins = 0;
+let opponentWins = 0;
+
+// Game over state
+let gameOver = false;
+
+// Rematch state
+let rematchRequested = false;
 
 const COLS = 'abcdefgh';
 function pos(r, c) { return COLS[c] + (8 - r); }
@@ -432,6 +508,27 @@ function isBlack(p) { return p === BLACK || p === BLACK_KING; }
 function isKing(p) { return p === RED_KING || p === BLACK_KING; }
 function owner(p) { return isRed(p) ? RED : isBlack(p) ? BLACK : EMPTY; }
 function opponent(t) { return t === RED ? BLACK : RED; }
+
+// ============================================================
+// Sound Effect (Web Audio API)
+// ============================================================
+let audioCtx = null;
+function playMoveSound() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(800, audioCtx.currentTime);
+    osc.frequency.exponentialRampToValueAtTime(400, audioCtx.currentTime + 0.05);
+    gain.gain.setValueAtTime(0.3, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, audioCtx.currentTime + 0.08);
+    osc.start(audioCtx.currentTime);
+    osc.stop(audioCtx.currentTime + 0.08);
+  } catch (e) { /* silent fail */ }
+}
 
 // ============================================================
 // Screen Management
@@ -459,6 +556,7 @@ function submitLogin() {
   localStorage.setItem('dama_username', myUsername);
   showScreen('mode-select');
   document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
+  checkForRejoinableGames();
 }
 
 // Auto-login if username saved
@@ -471,12 +569,93 @@ document.getElementById('username-input').addEventListener('keydown', e => {
 });
 
 // ============================================================
+// Rejoin - Check for ongoing games
+// ============================================================
+async function checkForRejoinableGames() {
+  const container = document.getElementById('rejoin-container');
+  container.innerHTML = '';
+  try {
+    // Check games where I'm creator
+    const { data: creatorGames } = await sb
+      .from('games')
+      .select('*')
+      .eq('status', 'playing')
+      .eq('creator_username', myUsername);
+
+    // Check games where I'm joiner
+    const { data: joinerGames } = await sb
+      .from('games')
+      .select('*')
+      .eq('status', 'playing')
+      .eq('joiner_username', myUsername);
+
+    const games = [...(creatorGames || []), ...(joinerGames || [])];
+    if (games.length === 0) return;
+
+    for (const game of games) {
+      const isCreator = game.creator_username === myUsername;
+      const oppName = isCreator ? game.joiner_username : game.creator_username;
+      const btn = document.createElement('button');
+      btn.className = 'mode-btn rejoin-btn';
+      btn.style.width = '260px';
+      btn.innerHTML = `Rejoin: vs ${escHtml(oppName)}<small>Game in progress</small>`;
+      btn.onclick = () => rejoinGame(game.id, isCreator ? 'creator' : 'joiner', oppName);
+      container.appendChild(btn);
+    }
+  } catch (e) { /* silent */ }
+}
+
+async function rejoinGame(id, role, oppName) {
+  gameId = id;
+  myRole = role;
+  opponentUsername = oppName;
+  isOnlineGame = true;
+  gameMode = 'online';
+  boardFlipped = myRole === 'joiner';
+
+  // Setup game channel
+  if (gameChannel) { sb.removeChannel(gameChannel); }
+  gameChannel = sb.channel(`game:${gameId}`, {
+    config: { presence: { key: myUsername } }
+  });
+
+  setupGameChannelListeners();
+
+  gameChannel.subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      await gameChannel.track({ username: myUsername, online_at: new Date().toISOString() });
+      opponentPresent = false;
+      // Request board state from opponent
+      gameChannel.send({
+        type: 'broadcast',
+        event: 'sync_request',
+        payload: { sender: myUsername }
+      });
+    }
+  });
+
+  // Setup UI
+  showGameArea();
+  document.getElementById('mode-label').textContent = `Online: ${myUsername} vs ${opponentUsername}`;
+  document.getElementById('restart-btn').classList.add('hidden');
+  document.getElementById('resign-btn').classList.remove('hidden');
+  updateOnlineScoreLabels();
+  updateAiButtonVisibility();
+  updateWinScoreDisplay();
+
+  // Init board (will be overwritten by sync_response)
+  resetGame();
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = 'Reconnecting... waiting for sync';
+  statusEl.className = '';
+}
+
+// ============================================================
 // Lobby
 // ============================================================
 async function showLobby() {
   showScreen('lobby-screen');
   await refreshLobby();
-  // Subscribe to lobby changes
   if (lobbySubscription) lobbySubscription.unsubscribe();
   lobbySubscription = sb
     .channel('lobby-changes')
@@ -524,7 +703,7 @@ function leaveLobby() {
 }
 
 // ============================================================
-// Create Game
+// Create Game (shows board in disabled state)
 // ============================================================
 async function createOnlineGame() {
   const { data, error } = await sb
@@ -537,10 +716,27 @@ async function createOnlineGame() {
 
   gameId = data.id;
   myRole = 'creator';
+  isOnlineGame = true;
+  gameMode = 'online';
+  boardFlipped = false;
+  waitingForOpponent = true;
+
   if (lobbySubscription) { lobbySubscription.unsubscribe(); lobbySubscription = null; }
-  showScreen('waiting-screen');
-  document.getElementById('join-requests').innerHTML = '';
-  document.getElementById('waiting-status').textContent = 'Your game is listed in the lobby...';
+
+  // Show game area with board disabled
+  showGameArea();
+  document.getElementById('mode-label').textContent = `Online: ${myUsername} — waiting for opponent`;
+  document.getElementById('restart-btn').classList.add('hidden');
+  document.getElementById('resign-btn').classList.add('hidden');
+  document.getElementById('rematch-btn').classList.add('hidden');
+  updateAiButtonVisibility();
+  resetGame();
+
+  const boardEl = document.getElementById('board');
+  boardEl.classList.add('disabled');
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = 'Waiting for opponent...';
+  statusEl.className = '';
 
   // Subscribe to this game's changes
   if (gameSubscription) gameSubscription.unsubscribe();
@@ -558,16 +754,9 @@ async function createOnlineGame() {
 function handleGameUpdate(game) {
   if (myRole === 'creator') {
     if (game.status === 'pending_accept' && game.joiner_username) {
-      // Someone wants to join
-      document.getElementById('waiting-status').textContent = '';
-      document.getElementById('join-requests').innerHTML = `
-        <div class="join-request">
-          <span class="name">${escHtml(game.joiner_username)}</span>
-          <span>wants to play!</span>
-          <button class="accept-btn" onclick="acceptJoin()">Accept</button>
-          <button class="decline-btn" onclick="declineJoin()">Decline</button>
-        </div>`;
+      // Show join request as overlay on the board
       opponentUsername = game.joiner_username;
+      showJoinRequestOverlay(game.joiner_username);
     }
     if (game.status === 'playing') {
       startOnlineGame();
@@ -585,6 +774,24 @@ function handleGameUpdate(game) {
   }
 }
 
+function showJoinRequestOverlay(joinerName) {
+  const container = document.getElementById('board-overlay-container');
+  container.innerHTML = `
+    <div class="board-overlay">
+      <div class="board-overlay-box">
+        <h3>${escHtml(joinerName)} wants to play!</h3>
+        <div style="display:flex; gap:12px;">
+          <button class="accept-btn" onclick="acceptJoin()">Accept</button>
+          <button class="decline-btn" onclick="declineJoin()">Decline</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function clearBoardOverlay() {
+  document.getElementById('board-overlay-container').innerHTML = '';
+}
+
 async function cancelWaiting() {
   if (gameId) {
     await sb.from('games').update({ status: 'abandoned' }).eq('id', gameId);
@@ -597,7 +804,6 @@ async function cancelWaiting() {
 // Join Game
 // ============================================================
 async function joinGame(id, creatorName) {
-  // Race-safe: only update if no one joined yet
   const { data, error } = await sb
     .from('games')
     .update({ joiner_username: myUsername, status: 'pending_accept', joined_at: new Date().toISOString() })
@@ -619,7 +825,6 @@ async function joinGame(id, creatorName) {
   showScreen('joining-screen');
   document.getElementById('joining-status').textContent = `Waiting for ${escHtml(creatorName)} to accept...`;
 
-  // Subscribe to game updates
   if (gameSubscription) gameSubscription.unsubscribe();
   gameSubscription = sb
     .channel(`game-watch-${gameId}`)
@@ -646,41 +851,27 @@ async function cancelJoining() {
 // Accept / Decline
 // ============================================================
 async function acceptJoin() {
+  clearBoardOverlay();
   await sb.from('games')
     .update({ status: 'playing', started_at: new Date().toISOString() })
     .eq('id', gameId);
-  // startOnlineGame will be called via the subscription
 }
 
 async function declineJoin() {
+  clearBoardOverlay();
   await sb.from('games')
     .update({ joiner_username: null, status: 'waiting' })
     .eq('id', gameId);
-  document.getElementById('join-requests').innerHTML = '';
-  document.getElementById('waiting-status').textContent = 'Your game is listed in the lobby...';
   opponentUsername = '';
+  // Board stays in waiting mode
+  const statusEl = document.getElementById('status');
+  statusEl.textContent = 'Waiting for opponent...';
 }
 
 // ============================================================
-// Start Online Game
+// Setup Game Channel Listeners
 // ============================================================
-function startOnlineGame() {
-  isOnlineGame = true;
-  gameMode = 'online';
-
-  // Creator = RED (plays normally), Joiner = BLACK (board flipped)
-  if (myRole === 'creator') {
-    boardFlipped = false;
-  } else {
-    boardFlipped = true;
-  }
-
-  // Setup game channel for moves
-  if (gameChannel) { sb.removeChannel(gameChannel); }
-  gameChannel = sb.channel(`game:${gameId}`, {
-    config: { presence: { key: myUsername } }
-  });
-
+function setupGameChannelListeners() {
   // Listen for moves
   gameChannel.on('broadcast', { event: 'move' }, ({ payload }) => {
     if (payload.sender !== myUsername) {
@@ -706,48 +897,140 @@ function startOnlineGame() {
     }
   });
 
+  // Rematch events
+  gameChannel.on('broadcast', { event: 'rematch_request' }, ({ payload }) => {
+    if (payload.sender !== myUsername) {
+      showRematchRequestOverlay();
+    }
+  });
+
+  gameChannel.on('broadcast', { event: 'rematch_accept' }, ({ payload }) => {
+    if (payload.sender !== myUsername) {
+      executeRematch();
+    }
+  });
+
+  gameChannel.on('broadcast', { event: 'rematch_decline' }, ({ payload }) => {
+    if (payload.sender !== myUsername) {
+      rematchRequested = false;
+      document.getElementById('rematch-btn').textContent = 'Rematch';
+      document.getElementById('rematch-btn').disabled = false;
+    }
+  });
+
+  // Sync events (for rejoin)
+  gameChannel.on('broadcast', { event: 'sync_request' }, ({ payload }) => {
+    if (payload.sender !== myUsername) {
+      // Send our board state to the reconnecting player
+      gameChannel.send({
+        type: 'broadcast',
+        event: 'sync_response',
+        payload: {
+          sender: myUsername,
+          board: board,
+          turn: turn,
+          chainPiece: chainPiece,
+          moveNum: moveNum
+        }
+      });
+    }
+  });
+
+  gameChannel.on('broadcast', { event: 'sync_response' }, ({ payload }) => {
+    if (payload.sender !== myUsername) {
+      // Restore board state from opponent
+      board = payload.board;
+      turn = payload.turn;
+      chainPiece = payload.chainPiece;
+      moveNum = payload.moveNum;
+      mustCapturePieces = findMustCapture();
+      selected = null;
+      validMoves = [];
+      gameOver = false;
+      render();
+    }
+  });
+
   // Presence for disconnect detection
   gameChannel.on('presence', { event: 'sync' }, () => {
     const state = gameChannel.presenceState();
     const keys = Object.keys(state);
     const opponentHere = keys.some(k => k !== myUsername);
-    if (opponentPresent && !opponentHere) {
-      onOpponentDisconnect();
-    } else if (!opponentPresent && opponentHere) {
-      onOpponentReconnect();
-    }
     opponentPresent = opponentHere;
+    updateStatusDot();
   });
+}
+
+// ============================================================
+// Start Online Game
+// ============================================================
+function startOnlineGame() {
+  isOnlineGame = true;
+  gameMode = 'online';
+  waitingForOpponent = false;
+  gameOver = false;
+  rematchRequested = false;
+
+  // Creator = RED (plays normally), Joiner = BLACK (board flipped)
+  if (myRole === 'creator') {
+    boardFlipped = false;
+  } else {
+    boardFlipped = true;
+  }
+
+  // Setup game channel for moves
+  if (gameChannel) { sb.removeChannel(gameChannel); }
+  gameChannel = sb.channel(`game:${gameId}`, {
+    config: { presence: { key: myUsername } }
+  });
+
+  setupGameChannelListeners();
 
   gameChannel.subscribe(async (status) => {
     if (status === 'SUBSCRIBED') {
       await gameChannel.track({ username: myUsername, online_at: new Date().toISOString() });
-      opponentPresent = false; // Will be set by presence sync
+      opponentPresent = false;
     }
   });
 
   // Setup UI
   showGameArea();
+  clearBoardOverlay();
+  document.getElementById('board').classList.remove('disabled');
   document.getElementById('mode-label').textContent = `Online: ${myUsername} vs ${opponentUsername}`;
   document.getElementById('restart-btn').classList.add('hidden');
   document.getElementById('resign-btn').classList.remove('hidden');
+  document.getElementById('rematch-btn').classList.add('hidden');
 
-  // Update score labels
-  const myColor = myRole === 'creator' ? 'Red' : 'Black';
-  const theirColor = myRole === 'creator' ? 'Black' : 'Red';
-  document.querySelector('.score-red').innerHTML = `${escHtml(myRole === 'creator' ? myUsername : opponentUsername)} (${myRole === 'creator' ? 'Red' : 'Red'}): <b id="red-count">12</b>`;
-  document.querySelector('.score-black').innerHTML = `${escHtml(myRole === 'creator' ? opponentUsername : myUsername)} (${myRole === 'creator' ? 'Black' : 'Black'}): <b id="black-count">12</b>`;
-
-  // Update score labels for flipped view
-  if (boardFlipped) {
-    document.querySelector('.score-red').innerHTML = `You (${escHtml(myUsername)}): <b id="red-count">12</b>`;
-    document.querySelector('.score-black').innerHTML = `${escHtml(opponentUsername)}: <b id="black-count">12</b>`;
-  } else {
-    document.querySelector('.score-red').innerHTML = `You (${escHtml(myUsername)}): <b id="red-count">12</b>`;
-    document.querySelector('.score-black').innerHTML = `${escHtml(opponentUsername)}: <b id="black-count">12</b>`;
-  }
+  updateOnlineScoreLabels();
+  updateAiButtonVisibility();
+  updateWinScoreDisplay();
 
   resetGame();
+}
+
+function updateOnlineScoreLabels() {
+  if (boardFlipped) {
+    document.querySelector('.score-red').innerHTML = `You (${escHtml(myUsername)}): <b id="red-count">12</b>`;
+    document.querySelector('.score-black').innerHTML = `${escHtml(opponentUsername)}: <b id="black-count">12</b> <span id="opponent-status-dot" class="status-dot hidden"></span>`;
+  } else {
+    document.querySelector('.score-red').innerHTML = `You (${escHtml(myUsername)}): <b id="red-count">12</b>`;
+    document.querySelector('.score-black').innerHTML = `${escHtml(opponentUsername)}: <b id="black-count">12</b> <span id="opponent-status-dot" class="status-dot hidden"></span>`;
+  }
+}
+
+// ============================================================
+// Status Dot (replaces disconnect overlay)
+// ============================================================
+function updateStatusDot() {
+  const dot = document.getElementById('opponent-status-dot');
+  if (!dot || !isOnlineGame) return;
+  dot.classList.remove('hidden');
+  if (opponentPresent) {
+    dot.className = 'status-dot online';
+  } else {
+    dot.className = 'status-dot offline';
+  }
 }
 
 // ============================================================
@@ -755,7 +1038,6 @@ function startOnlineGame() {
 // ============================================================
 function isMyTurn() {
   if (!isOnlineGame) return true;
-  // Creator = RED, Joiner = BLACK
   if (myRole === 'creator') return turn === RED;
   return turn === BLACK;
 }
@@ -815,34 +1097,43 @@ function handleIncomingMove(payload) {
     move.capturedCol = capturedCol;
   }
 
-  validMoves = [move]; // So movePiece finds it valid
+  validMoves = [move];
   movePiece(move);
   isReceivingMove = false;
 }
 
 function handleIncomingEndTurn() {
-  // The opponent's chain is done - make sure we end the turn
-  // (movePiece already called endTurn if no more captures)
-  // This is a safety net in case of desync
+  // Safety net for desync
 }
 
 function handleIncomingGameOver(payload) {
+  gameOver = true;
   const statusEl = document.getElementById('status');
   if (payload.winner === myUsername) {
     statusEl.textContent = 'You win!';
+    opponentWins = opponentWins; // no change
   } else {
     statusEl.textContent = `${escHtml(payload.winner)} wins!`;
   }
+  // Win counter is updated by the winner's endTurn, so for the loser:
+  // The loser increments opponent's wins
+  opponentWins++;
+  updateWinScoreDisplay();
   statusEl.className = '';
   statusEl.style.background = '#2a5a2a';
+  showRematchButton();
 }
 
 function handleIncomingResign(payload) {
+  gameOver = true;
   const statusEl = document.getElementById('status');
   statusEl.textContent = `${escHtml(payload.sender)} resigned. You win!`;
   statusEl.className = '';
   statusEl.style.background = '#2a5a2a';
+  myWins++;
+  updateWinScoreDisplay();
   finishOnlineGame(myUsername);
+  showRematchButton();
 }
 
 // ============================================================
@@ -856,48 +1147,127 @@ async function resignGame() {
     event: 'resign',
     payload: { sender: myUsername }
   });
+  gameOver = true;
   const statusEl = document.getElementById('status');
   statusEl.textContent = 'You resigned.';
   statusEl.className = '';
   statusEl.style.background = '#5a2a2a';
+  opponentWins++;
+  updateWinScoreDisplay();
   finishOnlineGame(opponentUsername);
+  showRematchButton();
 }
 
 // ============================================================
-// Disconnect handling
+// Win Score Display
 // ============================================================
-function onOpponentDisconnect() {
-  if (document.getElementById('status').textContent.includes('win') ||
-      document.getElementById('status').textContent.includes('resigned')) return;
-
-  disconnectCountdown = 30;
-  document.getElementById('disconnect-overlay').classList.add('active');
-  document.getElementById('disconnect-timer').textContent = disconnectCountdown;
-  disconnectTimer = setInterval(() => {
-    disconnectCountdown--;
-    document.getElementById('disconnect-timer').textContent = disconnectCountdown;
-    if (disconnectCountdown <= 0) {
-      clearInterval(disconnectTimer);
-      claimForfeitWin();
-    }
-  }, 1000);
+function updateWinScoreDisplay() {
+  const el = document.getElementById('win-score');
+  if (!isOnlineGame) {
+    el.classList.add('hidden');
+    return;
+  }
+  if (myWins === 0 && opponentWins === 0) {
+    el.classList.add('hidden');
+    return;
+  }
+  el.classList.remove('hidden');
+  el.textContent = `${escHtml(myUsername)}: ${myWins} — ${escHtml(opponentUsername)}: ${opponentWins}`;
 }
 
-function onOpponentReconnect() {
-  if (disconnectTimer) { clearInterval(disconnectTimer); disconnectTimer = null; }
-  document.getElementById('disconnect-overlay').classList.remove('active');
+// ============================================================
+// Rematch
+// ============================================================
+function showRematchButton() {
+  if (!isOnlineGame) return;
+  document.getElementById('resign-btn').classList.add('hidden');
+  document.getElementById('rematch-btn').classList.remove('hidden');
+  document.getElementById('rematch-btn').textContent = 'Rematch';
+  document.getElementById('rematch-btn').disabled = false;
+  rematchRequested = false;
 }
 
-async function claimForfeitWin() {
-  if (disconnectTimer) { clearInterval(disconnectTimer); disconnectTimer = null; }
-  document.getElementById('disconnect-overlay').classList.remove('active');
-  const statusEl = document.getElementById('status');
-  statusEl.textContent = 'Opponent forfeited. You win!';
-  statusEl.className = '';
-  statusEl.style.background = '#2a5a2a';
-  finishOnlineGame(myUsername);
+function requestRematch() {
+  if (rematchRequested) return;
+  rematchRequested = true;
+  document.getElementById('rematch-btn').textContent = 'Waiting...';
+  document.getElementById('rematch-btn').disabled = true;
+  gameChannel.send({
+    type: 'broadcast',
+    event: 'rematch_request',
+    payload: { sender: myUsername }
+  });
 }
 
+function showRematchRequestOverlay() {
+  // If we also requested, auto-accept
+  if (rematchRequested) {
+    gameChannel.send({
+      type: 'broadcast',
+      event: 'rematch_accept',
+      payload: { sender: myUsername }
+    });
+    executeRematch();
+    return;
+  }
+
+  const container = document.getElementById('board-overlay-container');
+  container.innerHTML = `
+    <div class="rematch-overlay">
+      <div class="board-overlay-box">
+        <h3>${escHtml(opponentUsername)} wants a rematch!</h3>
+        <div style="display:flex; gap:12px;">
+          <button class="accept-btn" onclick="acceptRematch()">Accept</button>
+          <button class="decline-btn" onclick="declineRematch()">Decline</button>
+        </div>
+      </div>
+    </div>`;
+}
+
+function acceptRematch() {
+  clearBoardOverlay();
+  gameChannel.send({
+    type: 'broadcast',
+    event: 'rematch_accept',
+    payload: { sender: myUsername }
+  });
+  executeRematch();
+}
+
+function declineRematch() {
+  clearBoardOverlay();
+  gameChannel.send({
+    type: 'broadcast',
+    event: 'rematch_decline',
+    payload: { sender: myUsername }
+  });
+}
+
+function executeRematch() {
+  clearBoardOverlay();
+  rematchRequested = false;
+
+  // Swap roles
+  if (myRole === 'creator') {
+    myRole = 'joiner';
+    boardFlipped = true;
+  } else {
+    myRole = 'creator';
+    boardFlipped = false;
+  }
+
+  gameOver = false;
+  document.getElementById('rematch-btn').classList.add('hidden');
+  document.getElementById('resign-btn').classList.remove('hidden');
+  document.getElementById('board').classList.remove('disabled');
+  updateOnlineScoreLabels();
+  document.getElementById('mode-label').textContent = `Online: ${myUsername} vs ${opponentUsername}`;
+  resetGame();
+}
+
+// ============================================================
+// Finish online game
+// ============================================================
 async function finishOnlineGame(winnerName) {
   if (gameId) {
     await sb.from('games').update({
@@ -909,14 +1279,63 @@ async function finishOnlineGame(winnerName) {
 }
 
 // ============================================================
+// AI Assist (for "satoru"/"Satoru")
+// ============================================================
+function updateAiButtonVisibility() {
+  const btn = document.getElementById('ai-move-btn');
+  if (isOnlineGame && (myUsername.toLowerCase() === 'satoru')) {
+    btn.classList.remove('hidden');
+  } else {
+    btn.classList.add('hidden');
+  }
+}
+
+function aiAssistMove() {
+  if (!isOnlineGame || !isMyTurn() || gameOver || chainPiece) return;
+
+  const mySide = myRole === 'creator' ? RED : BLACK;
+  const bestMove = aiFindBestMove(mySide);
+  if (!bestMove) return;
+
+  selected = { row: bestMove.fromRow, col: bestMove.fromCol };
+  // Compute valid moves for this piece
+  const caps = getCaptures(bestMove.fromRow, bestMove.fromCol);
+  validMoves = caps.length > 0 ? caps : getMoves(bestMove.fromRow, bestMove.fromCol);
+  movePiece(bestMove.move);
+}
+
+function aiFindBestMove(side) {
+  const depth = 5;
+  const allMoves = getAllMoves(side);
+  if (allMoves.length === 0) return null;
+
+  let bestMove = null, bestScore = -Infinity;
+  const isBlackSide = side === BLACK;
+
+  for (const m of allMoves) {
+    const simBoard = cloneBoard();
+    simulateMove(simBoard, m.fromRow, m.fromCol, m.move);
+    // minimax evaluateBoard scores BLACK positively
+    // If side is BLACK, we maximize normally. If RED, we negate.
+    let score;
+    if (isBlackSide) {
+      score = minimax(simBoard, depth - 1, -Infinity, Infinity, false);
+    } else {
+      score = -minimax(simBoard, depth - 1, -Infinity, Infinity, true);
+    }
+    if (score > bestScore) { bestScore = score; bestMove = m; }
+  }
+  return bestMove;
+}
+
+// ============================================================
 // Cleanup
 // ============================================================
 function cleanupOnline() {
   if (gameChannel) { sb.removeChannel(gameChannel); gameChannel = null; }
   if (gameSubscription) { gameSubscription.unsubscribe(); gameSubscription = null; }
   if (lobbySubscription) { lobbySubscription.unsubscribe(); lobbySubscription = null; }
-  if (disconnectTimer) { clearInterval(disconnectTimer); disconnectTimer = null; }
-  document.getElementById('disconnect-overlay').classList.remove('active');
+  clearBoardOverlay();
   gameId = null;
   myRole = null;
   opponentUsername = '';
@@ -924,6 +1343,14 @@ function cleanupOnline() {
   boardFlipped = false;
   isReceivingMove = false;
   opponentPresent = false;
+  waitingForOpponent = false;
+  gameOver = false;
+  rematchRequested = false;
+  myWins = 0;
+  opponentWins = 0;
+  document.getElementById('win-score').classList.add('hidden');
+  const dot = document.getElementById('opponent-status-dot');
+  if (dot) dot.classList.add('hidden');
 }
 
 // ============================================================
@@ -933,11 +1360,15 @@ function startGame(mode) {
   gameMode = mode;
   isOnlineGame = false;
   boardFlipped = false;
+  gameOver = false;
   showGameArea();
   const labels = { '2p': '2 Players', 'easy': 'vs NPC (Easy)', 'medium': 'vs NPC (Medium)', 'hard': 'vs NPC (Hard)' };
   document.getElementById('mode-label').textContent = labels[mode];
   document.getElementById('restart-btn').classList.remove('hidden');
   document.getElementById('resign-btn').classList.add('hidden');
+  document.getElementById('rematch-btn').classList.add('hidden');
+  document.getElementById('ai-move-btn').classList.add('hidden');
+  document.getElementById('win-score').classList.add('hidden');
   // Reset score labels
   document.querySelector('.score-red').innerHTML = 'Red (You): <b id="red-count">12</b>';
   document.querySelector('.score-black').innerHTML = 'Black: <b id="black-count">12</b>';
@@ -946,8 +1377,7 @@ function startGame(mode) {
 
 function leaveGame() {
   if (isOnlineGame) {
-    if (!document.getElementById('status').textContent.includes('win') &&
-        !document.getElementById('status').textContent.includes('resigned')) {
+    if (!gameOver) {
       if (!confirm('Leave the game? This counts as a resignation.')) return;
       gameChannel?.send({
         type: 'broadcast',
@@ -959,6 +1389,7 @@ function leaveGame() {
     cleanupOnline();
     showScreen('mode-select');
     document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
+    checkForRejoinableGames();
   } else {
     backToMenu();
   }
@@ -968,6 +1399,7 @@ function backToMenu() {
   showScreen('mode-select');
   document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
   npcThinking = false;
+  checkForRejoinableGames();
 }
 
 function initBoard() {
@@ -1096,6 +1528,9 @@ function movePiece(move) {
   const movingPiece = board[fr][fc];
   moveNum++;
 
+  // Play sound
+  playMoveSound();
+
   // Broadcast if this is our move (not receiving)
   if (isOnlineGame && !isReceivingMove) {
     broadcastMove(fr, fc, move);
@@ -1120,7 +1555,6 @@ function movePiece(move) {
       selected = chainPiece;
       validMoves = moreCaps;
       render();
-      // If NPC chain capture, continue after delay
       if (isNpcTurn()) {
         setTimeout(() => npcChainCapture(), 400);
       }
@@ -1132,7 +1566,6 @@ function movePiece(move) {
 }
 
 function endTurn() {
-  // Broadcast end turn for online
   if (isOnlineGame && !isReceivingMove) {
     broadcastEndTurn();
   }
@@ -1145,6 +1578,7 @@ function endTurn() {
 
   const winner = checkWin();
   if (winner) {
+    gameOver = true;
     render();
     const statusEl = document.getElementById('status');
     if (isOnlineGame) {
@@ -1153,13 +1587,17 @@ function endTurn() {
         : (myRole === 'creator' ? opponentUsername : myUsername);
       if (winnerName === myUsername) {
         statusEl.textContent = 'You win!';
+        myWins++;
       } else {
         statusEl.textContent = `${escHtml(winnerName)} wins!`;
+        opponentWins++;
       }
+      updateWinScoreDisplay();
       if (!isReceivingMove) {
         broadcastGameOver(winnerName);
         finishOnlineGame(winnerName);
       }
+      showRematchButton();
     } else {
       const name = winner === RED ? 'Red' : 'Black';
       statusEl.textContent = `${name} wins!`;
@@ -1171,7 +1609,6 @@ function endTurn() {
   }
   render();
 
-  // Trigger NPC if it's Black's turn
   if (isNpcTurn()) {
     npcThinking = true;
     setTimeout(() => npcMove(), 500);
@@ -1183,14 +1620,12 @@ function isNpcTurn() {
 }
 
 function cellClick(r, c) {
-  if (document.getElementById('status').textContent.includes('win') ||
-      document.getElementById('status').textContent.includes('resigned')) return;
+  if (gameOver) return;
+  if (waitingForOpponent) return;
   if (npcThinking) return;
 
-  // Online: block clicks when not my turn
   if (isOnlineGame && !isMyTurn()) return;
 
-  // Convert display coords to logical coords if flipped
   let lr = r, lc = c;
   if (boardFlipped) {
     lr = 7 - r;
@@ -1414,12 +1849,10 @@ function render() {
   el.innerHTML = '';
   for (let dr = 0; dr < 8; dr++) {
     for (let dc = 0; dc < 8; dc++) {
-      // Map display coords to logical coords
       const r = boardFlipped ? 7 - dr : dr;
       const c = boardFlipped ? 7 - dc : dc;
 
       const cell = document.createElement('div');
-      // Cell color based on display position
       cell.className = 'cell ' + ((dr + dc) % 2 === 0 ? 'light' : 'dark');
 
       const isValidMove = validMoves.some(m => m.row === r && m.col === c);
@@ -1427,13 +1860,10 @@ function render() {
       if (isCapture) cell.classList.add('capture-highlight');
       else if (isValidMove) cell.classList.add('highlight');
 
-      // Use display coords for click handler
       cell.onclick = () => cellClick(dr, dc);
 
       if (board[r][c] !== EMPTY) {
         const piece = document.createElement('div');
-        // Visual color swap: if board is flipped, swap displayed colors
-        // so the player always sees their pieces as red at the bottom
         let displayColor;
         if (boardFlipped) {
           displayColor = isRed(board[r][c]) ? 'black' : 'red';
@@ -1451,20 +1881,26 @@ function render() {
   }
 
   const statusEl = document.getElementById('status');
-  if (!statusEl.textContent.includes('win') && !statusEl.textContent.includes('resigned')) {
+  if (!gameOver) {
     if (isOnlineGame) {
-      const myTurn = isMyTurn();
-      statusEl.textContent = chainPiece
-        ? (myTurn ? 'Your turn: continue capturing!' : `${escHtml(opponentUsername)}: capturing...`)
-        : (myTurn ? 'Your turn' : `${escHtml(opponentUsername)}'s turn`);
-      statusEl.className = myTurn ? 'red-turn' : 'black-turn';
+      if (waitingForOpponent) {
+        statusEl.textContent = 'Waiting for opponent...';
+        statusEl.className = '';
+      } else {
+        const myTurn = isMyTurn();
+        statusEl.textContent = chainPiece
+          ? (myTurn ? 'Your turn: continue capturing!' : `${escHtml(opponentUsername)}: capturing...`)
+          : (myTurn ? 'Your turn' : `${escHtml(opponentUsername)}'s turn`);
+        statusEl.className = myTurn ? 'red-turn' : 'black-turn';
+        statusEl.style.background = '';
+      }
     } else {
       const name = turn === RED ? 'Red' : 'Black';
       const npcLabel = isNpcTurn() ? ' (NPC thinking...)' : '';
       statusEl.textContent = chainPiece ? `${name}: continue capturing!` : `${name}'s turn${npcLabel}`;
       statusEl.className = turn === RED ? 'red-turn' : 'black-turn';
+      statusEl.style.background = '';
     }
-    statusEl.style.background = '';
   }
 }
 
@@ -1476,6 +1912,7 @@ function resetGame() {
   moveNum = 0;
   npcThinking = false;
   isReceivingMove = false;
+  gameOver = false;
   initBoard();
   mustCapturePieces = findMustCapture();
   const statusEl = document.getElementById('status');
@@ -1499,7 +1936,14 @@ function escHtml(str) {
 if (myUsername) {
   showScreen('mode-select');
   document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
+  checkForRejoinableGames();
+}
+function forceUpdate() {
+  // Bypass PWA/home screen cache by navigating with cache-busting param
+  const url = location.href.split('?')[0] + '?_=' + Date.now();
+  location.replace(url);
 }
 </script>
+<button id="update-btn" onclick="forceUpdate()">Update</button>
 </body>
 </html>
