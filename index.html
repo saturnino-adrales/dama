@@ -269,10 +269,15 @@
   .status-dot {
     width: 10px;
     height: 10px;
+    min-width: 10px;
+    min-height: 10px;
     border-radius: 50%;
     display: inline-block;
     margin-left: 6px;
     vertical-align: middle;
+    aspect-ratio: 1;
+    line-height: 0;
+    font-size: 0;
   }
   .status-dot.online { background: #4caf50; box-shadow: 0 0 6px #4caf50; }
   .status-dot.offline { background: #e74c3c; box-shadow: 0 0 6px #e74c3c; }
