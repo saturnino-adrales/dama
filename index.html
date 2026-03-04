@@ -498,6 +498,7 @@ let gameOver = false;
 
 // Rematch state
 let rematchRequested = false;
+let lastWinnerUsername = '';
 
 const COLS = 'abcdefgh';
 function pos(r, c) { return COLS[c] + (8 - r); }
@@ -1118,6 +1119,7 @@ function handleIncomingGameOver(payload) {
   // Win counter is updated by the winner's endTurn, so for the loser:
   // The loser increments opponent's wins
   opponentWins++;
+  lastWinnerUsername = payload.winner;
   updateWinScoreDisplay();
   statusEl.className = '';
   statusEl.style.background = '#2a5a2a';
@@ -1131,6 +1133,7 @@ function handleIncomingResign(payload) {
   statusEl.className = '';
   statusEl.style.background = '#2a5a2a';
   myWins++;
+  lastWinnerUsername = myUsername;
   updateWinScoreDisplay();
   finishOnlineGame(myUsername);
   showRematchButton();
@@ -1153,6 +1156,7 @@ async function resignGame() {
   statusEl.className = '';
   statusEl.style.background = '#5a2a2a';
   opponentWins++;
+  lastWinnerUsername = opponentUsername;
   updateWinScoreDisplay();
   finishOnlineGame(opponentUsername);
   showRematchButton();
@@ -1247,13 +1251,13 @@ function executeRematch() {
   clearBoardOverlay();
   rematchRequested = false;
 
-  // Swap roles
-  if (myRole === 'creator') {
-    myRole = 'joiner';
-    boardFlipped = true;
-  } else {
+  // Winner gets first move (creator = RED = first)
+  if (lastWinnerUsername === myUsername) {
     myRole = 'creator';
     boardFlipped = false;
+  } else {
+    myRole = 'joiner';
+    boardFlipped = true;
   }
 
   gameOver = false;
@@ -1346,6 +1350,7 @@ function cleanupOnline() {
   waitingForOpponent = false;
   gameOver = false;
   rematchRequested = false;
+  lastWinnerUsername = '';
   myWins = 0;
   opponentWins = 0;
   document.getElementById('win-score').classList.add('hidden');
@@ -1585,6 +1590,7 @@ function endTurn() {
       const winnerName = winner === RED
         ? (myRole === 'creator' ? myUsername : opponentUsername)
         : (myRole === 'creator' ? opponentUsername : myUsername);
+      lastWinnerUsername = winnerName;
       if (winnerName === myUsername) {
         statusEl.textContent = 'You win!';
         myWins++;
