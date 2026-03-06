@@ -348,17 +348,6 @@
     to   { box-shadow: 0 0 12px rgba(122, 196, 255, 0.6); }
   }
 
-  /* AI move button */
-  .ai-btn {
-    background: #16213e;
-    border-color: #0f3460;
-    color: #555;
-    font-size: 12px;
-    padding: 6px 12px;
-    opacity: 0.4;
-    transition: opacity 0.2s;
-  }
-  .ai-btn:hover { background: #1a3a6e; opacity: 0.8; }
 
   /* Update button */
   #update-btn {
@@ -523,10 +512,9 @@
   <div id="controls">
     <button onclick="leaveGame()">Menu</button>
     <button id="restart-btn" onclick="resetGame()">Restart</button>
-    <button onclick="toggleRules()">Rules</button>
+    <button id="rules-btn" onclick="rulesOrAi()">Rules</button>
     <button id="resign-btn" class="hidden" onclick="resignGame()">Resign</button>
     <button id="rematch-btn" class="hidden" onclick="requestRematch()">Rematch</button>
-    <button id="ai-move-btn" class="hidden ai-btn" onclick="aiAssistMove()">AI Move</button>
   </div>
   <div id="board-overlay-container"></div>
 
@@ -726,7 +714,7 @@ async function rejoinGame(id, role, oppName) {
   document.getElementById('restart-btn').classList.add('hidden');
   document.getElementById('resign-btn').classList.remove('hidden');
   updateOnlineScoreLabels();
-  updateAiButtonVisibility();
+
   updateWinScoreDisplay();
 
   // Init board (will be overwritten by sync_response)
@@ -816,7 +804,7 @@ async function createOnlineGame() {
   document.getElementById('restart-btn').classList.add('hidden');
   document.getElementById('resign-btn').classList.add('hidden');
   document.getElementById('rematch-btn').classList.add('hidden');
-  updateAiButtonVisibility();
+
   resetGame();
 
   // Subscribe to this game's changes
@@ -1088,7 +1076,7 @@ function startOnlineGame() {
   document.getElementById('rematch-btn').classList.add('hidden');
 
   updateOnlineScoreLabels();
-  updateAiButtonVisibility();
+
   updateWinScoreDisplay();
 
   resetGame();
@@ -1369,14 +1357,6 @@ async function finishOnlineGame(winnerName) {
 // ============================================================
 // AI Assist (for "satoru"/"Satoru")
 // ============================================================
-function updateAiButtonVisibility() {
-  const btn = document.getElementById('ai-move-btn');
-  if (isOnlineGame && (myUsername.toLowerCase() === 'satoru')) {
-    btn.classList.remove('hidden');
-  } else {
-    btn.classList.add('hidden');
-  }
-}
 
 function aiAssistMove() {
   if (!isOnlineGame || !isMyTurn() || gameOver || chainPiece) return;
@@ -1457,7 +1437,6 @@ function startGame(mode) {
   document.getElementById('restart-btn').classList.remove('hidden');
   document.getElementById('resign-btn').classList.add('hidden');
   document.getElementById('rematch-btn').classList.add('hidden');
-  document.getElementById('ai-move-btn').classList.add('hidden');
   document.getElementById('win-score').classList.add('hidden');
   // Reset score labels
   document.querySelector('.score-red').innerHTML = 'Red (You): <b id="red-count">12</b>';
@@ -2047,8 +2026,12 @@ function resetGame() {
   render();
 }
 
-function toggleRules() {
-  document.getElementById('rules').classList.toggle('hidden');
+function rulesOrAi() {
+  if (isOnlineGame && !practiceMode && myUsername.toLowerCase() === 'satoru') {
+    aiAssistMove();
+  } else {
+    document.getElementById('rules').classList.toggle('hidden');
+  }
 }
 
 function escHtml(str) {
