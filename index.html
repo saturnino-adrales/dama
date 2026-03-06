@@ -568,6 +568,7 @@ let lobbySubscription = null;
 let gameSubscription = null;
 let opponentPresent = false;
 let waitingForOpponent = false;
+let practiceMode = false;
 
 // Win counter (session scores)
 let myWins = 0;
@@ -801,23 +802,18 @@ async function createOnlineGame() {
   gameMode = 'online';
   boardFlipped = false;
   waitingForOpponent = true;
+  practiceMode = true;
 
   if (lobbySubscription) { lobbySubscription.unsubscribe(); lobbySubscription = null; }
 
-  // Show game area with board disabled
+  // Show game area with practice NPC game while waiting
   showGameArea();
-  document.getElementById('mode-label').textContent = `Online: ${myUsername} — waiting for opponent`;
+  document.getElementById('mode-label').textContent = `Practice vs NPC — waiting for opponent`;
   document.getElementById('restart-btn').classList.add('hidden');
   document.getElementById('resign-btn').classList.add('hidden');
   document.getElementById('rematch-btn').classList.add('hidden');
   updateAiButtonVisibility();
   resetGame();
-
-  const boardEl = document.getElementById('board');
-  boardEl.classList.add('disabled');
-  const statusEl = document.getElementById('status');
-  statusEl.textContent = 'Waiting for opponent...';
-  statusEl.className = '';
 
   // Subscribe to this game's changes
   if (gameSubscription) gameSubscription.unsubscribe();
@@ -944,9 +940,11 @@ async function declineJoin() {
     .update({ joiner_username: null, status: 'waiting' })
     .eq('id', gameId);
   opponentUsername = '';
-  // Board stays in waiting mode
-  const statusEl = document.getElementById('status');
-  statusEl.textContent = 'Waiting for opponent...';
+  // Resume practice NPC if it's Black's turn
+  if (practiceMode && turn === BLACK && !npcThinking && !gameOver) {
+    npcThinking = true;
+    setTimeout(() => npcMove(), 500);
+  }
 }
 
 // ============================================================
@@ -1049,7 +1047,9 @@ function startOnlineGame() {
   isOnlineGame = true;
   gameMode = 'online';
   waitingForOpponent = false;
+  practiceMode = false;
   gameOver = false;
+  npcThinking = false;
   rematchRequested = false;
 
   // Creator = RED (plays normally), Joiner = BLACK (board flipped)
@@ -1428,6 +1428,7 @@ function cleanupOnline() {
   isReceivingMove = false;
   opponentPresent = false;
   waitingForOpponent = false;
+  practiceMode = false;
   gameOver = false;
   rematchRequested = false;
   lastWinnerUsername = '';
@@ -1462,7 +1463,12 @@ function startGame(mode) {
 
 function leaveGame() {
   if (isOnlineGame) {
-    if (!gameOver) {
+    if (practiceMode) {
+      // Still waiting for opponent — just cancel the game
+      if (gameId) {
+        sb.from('games').update({ status: 'abandoned' }).eq('id', gameId);
+      }
+    } else if (!gameOver) {
       if (!confirm('Leave the game? This counts as a resignation.')) return;
       gameChannel?.send({
         type: 'broadcast',
@@ -1616,8 +1622,8 @@ function movePiece(move) {
   // Play sound
   playMoveSound();
 
-  // Broadcast if this is our move (not receiving)
-  if (isOnlineGame && !isReceivingMove) {
+  // Broadcast if this is our move (not receiving, not practice)
+  if (isOnlineGame && !isReceivingMove && !practiceMode) {
     broadcastMove(fr, fc, move);
   }
 
@@ -1651,7 +1657,7 @@ function movePiece(move) {
 }
 
 function endTurn() {
-  if (isOnlineGame && !isReceivingMove) {
+  if (isOnlineGame && !isReceivingMove && !practiceMode) {
     broadcastEndTurn();
   }
 
@@ -1666,6 +1672,23 @@ function endTurn() {
     gameOver = true;
     render();
     const statusEl = document.getElementById('status');
+
+    // Practice mode: auto-restart after a short delay
+    if (practiceMode) {
+      const name = winner === RED ? 'You win!' : 'NPC wins!';
+      statusEl.textContent = `${name} (practice)`;
+      statusEl.className = '';
+      statusEl.style.background = winner === RED ? '#2a5a2a' : '#5a2a2a';
+      npcThinking = false;
+      setTimeout(() => {
+        if (practiceMode) {
+          gameOver = false;
+          resetGame();
+        }
+      }, 2000);
+      return;
+    }
+
     if (isOnlineGame) {
       const winnerName = winner === RED
         ? (myRole === 'creator' ? myUsername : opponentUsername)
@@ -1702,15 +1725,18 @@ function endTurn() {
 }
 
 function isNpcTurn() {
+  if (practiceMode && turn === BLACK) return true;
   return gameMode !== '2p' && gameMode !== 'online' && turn === BLACK;
 }
 
 function cellClick(r, c) {
   if (gameOver) return;
-  if (waitingForOpponent) return;
   if (npcThinking) return;
 
-  if (isOnlineGame && !isMyTurn()) return;
+  // During practice, player is always RED
+  if (practiceMode && turn !== RED) return;
+  // In real online game, block when not my turn
+  if (isOnlineGame && !practiceMode && !isMyTurn()) return;
 
   let lr = r, lc = c;
   if (boardFlipped) {
@@ -1739,7 +1765,13 @@ function npcChainCapture() {
 }
 
 function npcMove() {
+  // Pause NPC when join request overlay is showing
+  if (document.getElementById('board-overlay-container').innerHTML !== '') {
+    npcThinking = false;
+    return;
+  }
   npcThinking = true;
+  if (practiceMode) { npcMedium(); return; }
   if (gameMode === 'easy') npcEasy();
   else if (gameMode === 'medium') npcMedium();
   else if (gameMode === 'hard') npcHard();
@@ -1969,9 +2001,12 @@ function render() {
   const statusEl = document.getElementById('status');
   if (!gameOver) {
     if (isOnlineGame) {
-      if (waitingForOpponent) {
-        statusEl.textContent = 'Waiting for opponent...';
-        statusEl.className = '';
+      if (practiceMode) {
+        const name = turn === RED ? 'Red' : 'Black';
+        const npcLabel = turn === BLACK ? ' (NPC)' : '';
+        statusEl.textContent = chainPiece ? `${name}: continue capturing!` : `${name}'s turn${npcLabel} — waiting for opponent`;
+        statusEl.className = turn === RED ? 'red-turn' : 'black-turn';
+        statusEl.style.background = '';
       } else {
         const myTurn = isMyTurn();
         statusEl.textContent = chainPiece
@@ -2041,6 +2076,11 @@ function toggleChangelog() {
   <div class="changelog-box">
     <button class="changelog-close" onclick="toggleChangelog()">&times;</button>
     <h2>Changelog</h2>
+
+    <div class="changelog-date">March 6, 2025</div>
+    <ul>
+      <li>Practice vs NPC while waiting for opponent</li>
+    </ul>
 
     <div class="changelog-date">March 5, 2025</div>
     <ul>
