@@ -688,6 +688,9 @@ let lastWinnerUsername = '';
 // AI auto mode (secret toggle for satoru)
 let aiAutoMode = false;
 
+// Pending capture effect (shown after render)
+let pendingCaptureEffect = null;
+
 // Turn timer
 let turnTimer = null;
 let turnTimeLeft = 15;
@@ -728,6 +731,14 @@ function playMoveSound() {
     osc.start(audioCtx.currentTime);
     osc.stop(audioCtx.currentTime + 0.08);
   } catch (e) { /* silent fail */ }
+}
+
+function flushCaptureEffect() {
+  if (pendingCaptureEffect) {
+    const { row, col, pieceVal } = pendingCaptureEffect;
+    pendingCaptureEffect = null;
+    showCaptureEffect(row, col, pieceVal);
+  }
 }
 
 function showCaptureEffect(row, col, pieceVal) {
@@ -1774,9 +1785,11 @@ function movePiece(move) {
   board[move.row][move.col] = board[fr][fc];
   board[fr][fc] = EMPTY;
   let captured = false;
+  let capturedPieceVal = null, capturedRow = null, capturedCol = null;
   if (move.capturedRow !== undefined) {
-    showCaptureEffect(move.capturedRow, move.capturedCol, board[move.capturedRow][move.capturedCol]);
-    board[move.capturedRow][move.capturedCol] = EMPTY;
+    capturedRow = move.capturedRow; capturedCol = move.capturedCol;
+    capturedPieceVal = board[capturedRow][capturedCol];
+    board[capturedRow][capturedCol] = EMPTY;
     captured = true;
   }
   promote(move.row, move.col);
@@ -1788,6 +1801,7 @@ function movePiece(move) {
       selected = chainPiece;
       validMoves = moreCaps;
       render();
+      showCaptureEffect(capturedRow, capturedCol, capturedPieceVal);
       // Auto-execute chain captures for everyone (after short delay for visibility)
       if (isNpcTurn()) {
         setTimeout(() => npcChainCapture(), 400);
@@ -1800,6 +1814,8 @@ function movePiece(move) {
       return;
     }
   }
+  // Store capture info for after endTurn's render()
+  if (captured) { pendingCaptureEffect = { row: capturedRow, col: capturedCol, pieceVal: capturedPieceVal }; }
   endTurn();
 }
 
@@ -1815,6 +1831,7 @@ function endTurn() {
     gameOver = true;
     stopTurnTimer();
     render();
+    flushCaptureEffect();
     const statusEl = document.getElementById('status');
 
     if (practiceMode) {
@@ -1846,6 +1863,7 @@ function endTurn() {
   }
 
   render();
+  flushCaptureEffect();
 
   // Auto-capture: if only one piece must capture and it has only one capture, auto-execute
   const isHumanTurn = isOnlineGame ? (!practiceMode && isMyTurn() && !isReceivingMove) : (!isNpcTurn());
@@ -2222,7 +2240,7 @@ function toggleChangelog() {
       <li>Turn timer with countdown bar (default 15s, configurable)</li>
       <li>Timeout penalty: worst possible move is played</li>
       <li>Win scores persist forever across sessions</li>
-      <li>Capture vanishing effect — pieces burst and fade out</li>
+      <li>Capture explosion effect — pieces explode with debris particles</li>
     </ul>
 
     <div class="changelog-date">March 6, 2025</div>
