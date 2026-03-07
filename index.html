@@ -550,7 +550,7 @@
 <!-- Mode Selection Screen -->
 <div id="mode-select" class="screen">
   <h2>Select Mode</h2>
-  <div id="username-display" style="color: #f0c040; font-size: 14px;"></div>
+  <div id="username-display" style="color: #f0c040; font-size: 14px; cursor:pointer;" onclick="changeDisplayName()" title="Click to change"></div>
   <div style="cursor:pointer;color:#888;font-size:12px;" onclick="signOut()">Sign out</div>
   <div id="rejoin-container"></div>
   <div id="room-buttons"></div>
@@ -910,6 +910,18 @@ async function signOut() {
   opponentUserId = null;
   partnerRooms = [];
   showScreen('auth-screen');
+}
+
+async function changeDisplayName() {
+  const newName = prompt('New display name:', myUsername);
+  if (!newName || !newName.trim() || newName.trim() === myUsername) return;
+  const trimmed = newName.trim();
+  const { data: taken } = await sb.from('profiles').select('id').eq('display_name', trimmed).neq('id', myUserId).maybeSingle();
+  if (taken) { alert('Display name already taken.'); return; }
+  const { error } = await sb.from('profiles').update({ display_name: trimmed }).eq('id', myUserId);
+  if (error) { alert('Failed: ' + error.message); return; }
+  myUsername = trimmed;
+  document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
 }
 
 document.getElementById('auth-email').addEventListener('keydown', e => {
@@ -2345,6 +2357,7 @@ function toggleChangelog() {
     <div class="changelog-date">March 8, 2025</div>
     <ul>
       <li>User accounts with email/password login — partner rooms saved to cloud</li>
+      <li>Tap your name to change display name</li>
     </ul>
 
     <div class="changelog-date">March 7, 2025</div>
