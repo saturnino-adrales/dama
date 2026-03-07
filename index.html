@@ -864,8 +864,8 @@ async function submitAuth() {
     const { data, error } = await sb.auth.signUp({ email, password });
     if (error) { errEl.textContent = error.message; return; }
 
-    // Insert profile
-    const { error: profErr } = await sb.from('profiles').insert({ id: data.user.id, display_name: displayName });
+    // Insert profile (upsert to handle retry after partial signup)
+    const { error: profErr } = await sb.from('profiles').upsert({ id: data.user.id, display_name: displayName }, { onConflict: 'id' });
     if (profErr) { errEl.textContent = 'Account created but profile failed: ' + profErr.message; return; }
 
     await onAuthSuccess(data.user);
@@ -880,8 +880,15 @@ async function onAuthSuccess(user) {
   currentUser = user;
   myUserId = user.id;
 
-  // Load profile
-  const { data: profile } = await sb.from('profiles').select('display_name').eq('id', myUserId).single();
+  // Load profile (if missing, prompt for display name)
+  let { data: profile } = await sb.from('profiles').select('display_name').eq('id', myUserId).maybeSingle();
+  if (!profile) {
+    const name = prompt('Set your display name:');
+    if (name && name.trim()) {
+      await sb.from('profiles').upsert({ id: myUserId, display_name: name.trim() }, { onConflict: 'id' });
+      profile = { display_name: name.trim() };
+    }
+  }
   myUsername = profile ? profile.display_name : 'Unknown';
 
   // Load partner rooms from DB
