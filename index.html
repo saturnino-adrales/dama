@@ -1205,6 +1205,7 @@ async function enterRoom(partner, partnerUserId) {
   // Join room channel
   if (roomChannel) { sb.removeChannel(roomChannel); }
   const chName = getRoomChannelName(partner);
+  console.log('[Room] entering room, channel:', chName, 'myUserId:', myUserId, 'opponentUserId:', opponentUserId);
   roomChannel = sb.channel(chName, {
     config: { presence: { key: myUserId || myUsername } }
   });
@@ -1214,13 +1215,14 @@ async function enterRoom(partner, partnerUserId) {
     const state = roomChannel.presenceState();
     const keys = Object.keys(state);
     const myKey = myUserId || myUsername;
+    console.log('[Room] presence sync, channel:', chName, 'keys:', keys, 'myKey:', myKey);
     const partnerHere = keys.some(k => k !== myKey);
     if (!opponentPresent && partnerHere && inRoom) {
       opponentPresent = true;
       updateStatusDot();
       if (practiceMode) {
-        // Partner arrived! Start real game. Alphabetically first = creator.
-        const iAmCreator = myUsername.toLowerCase() < partner.toLowerCase();
+        // Partner arrived! Start real game. Sorted user ID first = creator.
+        const iAmCreator = (myUserId || myUsername.toLowerCase()) < (opponentUserId || partner.toLowerCase());
         myRole = iAmCreator ? 'creator' : 'joiner';
         boardFlipped = myRole === 'joiner';
         // Setup game channel (reuse room channel for moves)
