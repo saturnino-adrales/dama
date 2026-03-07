@@ -1066,29 +1066,27 @@ let allUsers = []; // cached list of all users
 
 async function loadPartnerRooms() {
   if (!myUserId) return;
-  // Rooms I created
-  const { data: myRooms } = await sb.from('partner_rooms')
-    .select('partner_user_id, profiles!partner_rooms_partner_user_id_fkey(display_name)')
-    .eq('user_id', myUserId);
-  // Rooms where I'm the partner
-  const { data: theirRooms } = await sb.from('partner_rooms')
-    .select('user_id, profiles!partner_rooms_user_id_fkey(display_name)')
-    .eq('partner_user_id', myUserId);
+  // Get all rooms involving me
+  const { data: rooms } = await sb.from('partner_rooms')
+    .select('user_id, partner_user_id')
+    .or(`user_id.eq.${myUserId},partner_user_id.eq.${myUserId}`);
 
+  if (!rooms || rooms.length === 0) { partnerRooms = []; return; }
+
+  // Collect partner IDs (the other person in each room)
+  const partnerIds = [];
   const seen = new Set();
-  partnerRooms = [];
-  for (const r of (myRooms || [])) {
-    if (!seen.has(r.partner_user_id)) {
-      seen.add(r.partner_user_id);
-      partnerRooms.push({ userId: r.partner_user_id, name: r.profiles?.display_name || 'Unknown' });
-    }
+  for (const r of rooms) {
+    const partnerId = r.user_id === myUserId ? r.partner_user_id : r.user_id;
+    if (!seen.has(partnerId)) { seen.add(partnerId); partnerIds.push(partnerId); }
   }
-  for (const r of (theirRooms || [])) {
-    if (!seen.has(r.user_id)) {
-      seen.add(r.user_id);
-      partnerRooms.push({ userId: r.user_id, name: r.profiles?.display_name || 'Unknown' });
-    }
-  }
+
+  // Fetch display names
+  const { data: profiles } = await sb.from('profiles').select('id, display_name').in('id', partnerIds);
+  const nameMap = {};
+  for (const p of (profiles || [])) nameMap[p.id] = p.display_name;
+
+  partnerRooms = partnerIds.map(id => ({ userId: id, name: nameMap[id] || 'Unknown' }));
 }
 
 function renderRoomButtons() {
