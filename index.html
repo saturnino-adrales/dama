@@ -154,7 +154,7 @@
     to   { box-shadow: 0 0 18px rgba(255, 80, 80, 0.8); }
   }
   .piece.captured-effect {
-    animation: captureExplode 0.5s ease-out forwards;
+    animation: captureExplode 1s ease-out forwards;
     pointer-events: none;
   }
   @keyframes captureExplode {
@@ -181,7 +181,7 @@
     border-radius: 50%;
     pointer-events: none;
     z-index: 4;
-    animation: flashBurst 0.4s ease-out forwards;
+    animation: flashBurst 0.8s ease-out forwards;
   }
   @keyframes flashBurst {
     0%   { transform: scale(0.5); opacity: 0.9; box-shadow: 0 0 20px currentColor; }
@@ -784,7 +784,7 @@ function showCaptureEffect(row, col, pieceVal) {
   ghost.className = 'piece ' + displayColor + ' captured-effect';
   if (isKing(pieceVal)) ghost.textContent = 'K';
   cell.appendChild(ghost);
-  setTimeout(() => ghost.remove(), 550);
+  setTimeout(() => ghost.remove(), 1100);
 
   // Explosion flash
   const flash = document.createElement('div');
@@ -794,7 +794,7 @@ function showCaptureEffect(row, col, pieceVal) {
     ? 'radial-gradient(circle, rgba(255,120,80,0.8), rgba(255,60,40,0.3), transparent 70%)'
     : 'radial-gradient(circle, rgba(200,200,200,0.8), rgba(100,100,100,0.3), transparent 70%)';
   cell.appendChild(flash);
-  setTimeout(() => flash.remove(), 450);
+  setTimeout(() => flash.remove(), 900);
 
   // Debris particles
   const debrisColors = isRedPiece
@@ -809,7 +809,7 @@ function showCaptureEffect(row, col, pieceVal) {
     const dist = cellSize * (0.6 + Math.random() * 0.8);
     const dx = Math.cos(angle) * dist;
     const dy = Math.sin(angle) * dist;
-    const duration = 0.4 + Math.random() * 0.3;
+    const duration = 0.8 + Math.random() * 0.6;
     d.style.width = size + 'px';
     d.style.height = size + 'px';
     d.style.background = debrisColors[Math.floor(Math.random() * debrisColors.length)];
