@@ -299,7 +299,7 @@
     pointer-events: none;
   }
 
-  /* Join request overlay on board */
+  /* Board overlay */
   .board-overlay {
     position: absolute;
     top: 0; left: 0; right: 0; bottom: 0;
@@ -348,6 +348,58 @@
     to   { box-shadow: 0 0 12px rgba(122, 196, 255, 0.6); }
   }
 
+  /* Room button */
+  .room-btn {
+    background: #2a3a5a;
+    border-color: #4a6a9a;
+    color: #8ab4ff;
+  }
+  .room-btn:hover { background: #3a4a6a; border-color: #f0c040; }
+
+  /* Room management */
+  .room-container { display: flex; flex-direction: column; gap: 8px; width: 260px; }
+  .room-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; background: #1a1a2e; border: 1px solid #0f3460; border-radius: 6px;
+  }
+  .room-item .partner-name { color: #8ab4ff; font-weight: bold; font-size: 14px; }
+  .room-delete { background: none; border: none; color: #e74c3c; cursor: pointer; font-size: 16px; padding: 2px 6px; opacity: 0.6; }
+  .room-delete:hover { opacity: 1; background: none; }
+  .add-partner-row { display: flex; gap: 8px; }
+  .add-partner-input {
+    flex: 1; padding: 8px 12px; font-size: 14px;
+    border: 1px solid #0f3460; border-radius: 6px;
+    background: #1a1a2e; color: #e0e0e0; outline: none;
+  }
+  .add-partner-input:focus { border-color: #f0c040; }
+  .add-partner-btn { padding: 8px 14px; font-size: 13px; }
+
+  /* Timer bar */
+  #timer-bar {
+    width: min(85vw, 560px);
+    height: 6px;
+    background: #0f1a2e;
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  #timer-fill {
+    height: 100%;
+    background: #4caf50;
+    border-radius: 3px;
+    transition: width 0.5s linear, background 0.3s;
+    width: 100%;
+  }
+  #timer-fill.warning { background: #f0c040; }
+  #timer-fill.critical { background: #e74c3c; }
+
+  /* Timer settings */
+  .timer-setting {
+    display: flex; align-items: center; gap: 8px; font-size: 13px; color: #888;
+  }
+  .timer-setting select {
+    padding: 4px 8px; background: #1a1a2e; color: #e0e0e0;
+    border: 1px solid #0f3460; border-radius: 4px; font-size: 13px;
+  }
 
   /* Update button */
   #update-btn {
@@ -459,6 +511,7 @@
   <h2>Select Mode</h2>
   <div id="username-display" style="color: #f0c040; font-size: 14px;"></div>
   <div id="rejoin-container"></div>
+  <div id="room-buttons"></div>
   <button class="mode-btn" onclick="showLobby()">
     Online Multiplayer
     <small>Play with someone online</small>
@@ -479,6 +532,29 @@
     vs NPC (Hard)
     <small>AI looks ahead and plays smart</small>
   </button>
+  <div id="room-manage" style="margin-top:8px;">
+    <div class="timer-setting" style="margin-bottom:8px;">
+      <span>Turn timer:</span>
+      <select id="timer-select" onchange="setTurnTimeLimit(this.value)">
+        <option value="10">10s</option>
+        <option value="15" selected>15s</option>
+        <option value="20">20s</option>
+        <option value="30">30s</option>
+        <option value="60">60s</option>
+        <option value="0">Off</option>
+      </select>
+    </div>
+    <details>
+      <summary style="color:#888;font-size:13px;cursor:pointer;">Partner Rooms</summary>
+      <div class="room-container" style="margin-top:8px;">
+        <div id="room-list"></div>
+        <div class="add-partner-row">
+          <input type="text" id="partner-input" class="add-partner-input" placeholder="Partner username" maxlength="20">
+          <button class="add-partner-btn" onclick="addPartner()">Add</button>
+        </div>
+      </div>
+    </details>
+  </div>
 </div>
 
 <!-- Lobby Screen -->
@@ -508,6 +584,7 @@
   </div>
   <div id="mode-label"></div>
   <div id="status" class="red-turn">Red's turn</div>
+  <div id="timer-bar" class="hidden"><div id="timer-fill"></div></div>
   <div id="board"></div>
   <div id="controls">
     <button onclick="leaveGame()">Menu</button>
@@ -549,7 +626,7 @@ let npcThinking = false;
 
 // Online state
 let myUsername = localStorage.getItem('dama_username') || '';
-let myRole = null; // 'creator' or 'joiner'
+let myRole = null;
 let gameId = null;
 let opponentUsername = '';
 let boardFlipped = false;
@@ -562,7 +639,7 @@ let opponentPresent = false;
 let waitingForOpponent = false;
 let practiceMode = false;
 
-// Win counter (session scores)
+// Win counter (persisted in localStorage)
 let myWins = 0;
 let opponentWins = 0;
 
@@ -572,6 +649,20 @@ let gameOver = false;
 // Rematch state
 let rematchRequested = false;
 let lastWinnerUsername = '';
+
+// AI auto mode (secret toggle for satoru)
+let aiAutoMode = false;
+
+// Turn timer
+let turnTimer = null;
+let turnTimeLeft = 15;
+let turnTimeLimit = parseInt(localStorage.getItem('dama_timer') || '15');
+
+// Partner rooms (localStorage)
+let partnerRooms = JSON.parse(localStorage.getItem('dama_rooms') || '[]');
+let roomChannel = null;
+let inRoom = false;
+let roomPartner = '';
 
 const COLS = 'abcdefgh';
 function pos(r, c) { return COLS[c] + (8 - r); }
@@ -631,9 +722,11 @@ function submitLogin() {
   showScreen('mode-select');
   document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
   checkForRejoinableGames();
+  renderRoomButtons();
+  renderRoomList();
+  loadTimerSetting();
 }
 
-// Auto-login if username saved
 if (myUsername) {
   document.getElementById('username-input').value = myUsername;
 }
@@ -643,29 +736,329 @@ document.getElementById('username-input').addEventListener('keydown', e => {
 });
 
 // ============================================================
+// Scoreboard Persistence
+// ============================================================
+function getScoreKey() {
+  const names = [myUsername.toLowerCase(), opponentUsername.toLowerCase()].sort();
+  return `dama_score_${names[0]}_${names[1]}`;
+}
+
+function loadPersistedScores() {
+  if (!opponentUsername) return;
+  try {
+    const saved = JSON.parse(localStorage.getItem(getScoreKey()) || '{}');
+    const myKey = myUsername.toLowerCase();
+    const oppKey = opponentUsername.toLowerCase();
+    myWins = saved[myKey] || 0;
+    opponentWins = saved[oppKey] || 0;
+  } catch (e) { myWins = 0; opponentWins = 0; }
+}
+
+function savePersistedScores() {
+  if (!opponentUsername) return;
+  const myKey = myUsername.toLowerCase();
+  const oppKey = opponentUsername.toLowerCase();
+  const data = {};
+  data[myKey] = myWins;
+  data[oppKey] = opponentWins;
+  localStorage.setItem(getScoreKey(), JSON.stringify(data));
+}
+
+// ============================================================
+// Turn Timer
+// ============================================================
+function setTurnTimeLimit(val) {
+  turnTimeLimit = parseInt(val);
+  localStorage.setItem('dama_timer', turnTimeLimit);
+}
+
+function loadTimerSetting() {
+  const sel = document.getElementById('timer-select');
+  if (sel) sel.value = turnTimeLimit;
+}
+
+function startTurnTimer() {
+  stopTurnTimer();
+  if (!isOnlineGame || practiceMode || turnTimeLimit === 0 || gameOver) return;
+  turnTimeLeft = turnTimeLimit;
+  updateTimerDisplay();
+  document.getElementById('timer-bar').classList.remove('hidden');
+  turnTimer = setInterval(() => {
+    turnTimeLeft -= 0.5;
+    updateTimerDisplay();
+    if (turnTimeLeft <= 0) {
+      stopTurnTimer();
+      onTurnTimeout();
+    }
+  }, 500);
+}
+
+function stopTurnTimer() {
+  if (turnTimer) { clearInterval(turnTimer); turnTimer = null; }
+  const bar = document.getElementById('timer-bar');
+  if (bar) bar.classList.add('hidden');
+}
+
+function updateTimerDisplay() {
+  const fill = document.getElementById('timer-fill');
+  if (!fill) return;
+  const pct = Math.max(0, (turnTimeLeft / turnTimeLimit) * 100);
+  fill.style.width = pct + '%';
+  fill.className = '';
+  if (pct < 25) fill.className = 'critical';
+  else if (pct < 50) fill.className = 'warning';
+}
+
+function onTurnTimeout() {
+  if (gameOver || !isOnlineGame || practiceMode) return;
+  if (isMyTurn()) {
+    // My turn timed out: make worst move
+    const mySide = myRole === 'creator' ? RED : BLACK;
+    const worst = findWorstMove(mySide);
+    if (worst) {
+      selected = { row: worst.fromRow, col: worst.fromCol };
+      const caps = getCaptures(worst.fromRow, worst.fromCol);
+      validMoves = caps.length > 0 ? caps : getMoves(worst.fromRow, worst.fromCol);
+      movePiece(worst.move);
+    }
+  }
+  // Opponent timeout: their client handles it
+}
+
+function findWorstMove(side) {
+  const allMoves = getAllMoves(side);
+  if (allMoves.length === 0) return null;
+
+  // Find the move that results in the worst position for this side
+  let worst = null, worstScore = Infinity;
+  const isBlackSide = side === BLACK;
+  for (const m of allMoves) {
+    const simBoard = cloneBoard();
+    simulateMove(simBoard, m.fromRow, m.fromCol, m.move);
+    const score = evaluateBoard(simBoard);
+    // For BLACK, high score = good. For RED, low score = good.
+    const sideScore = isBlackSide ? score : -score;
+    if (sideScore < worstScore) { worstScore = sideScore; worst = m; }
+  }
+  return worst;
+}
+
+// ============================================================
+// Partner Rooms
+// ============================================================
+function renderRoomButtons() {
+  const container = document.getElementById('room-buttons');
+  if (!container) return;
+  container.innerHTML = '';
+  for (const partner of partnerRooms) {
+    const btn = document.createElement('button');
+    btn.className = 'mode-btn room-btn';
+    btn.innerHTML = `Play: vs ${escHtml(partner)}<small>Permanent room</small>`;
+    btn.onclick = () => enterRoom(partner);
+    container.appendChild(btn);
+  }
+}
+
+function renderRoomList() {
+  const list = document.getElementById('room-list');
+  if (!list) return;
+  list.innerHTML = '';
+  for (const partner of partnerRooms) {
+    const item = document.createElement('div');
+    item.className = 'room-item';
+    item.innerHTML = `<span class="partner-name">${escHtml(partner)}</span>
+      <button class="room-delete" onclick="removePartner('${escHtml(partner)}')">&times;</button>`;
+    list.appendChild(item);
+  }
+}
+
+function addPartner() {
+  const input = document.getElementById('partner-input');
+  const name = input.value.trim();
+  if (!name || name.toLowerCase() === myUsername.toLowerCase()) { input.focus(); return; }
+  if (partnerRooms.some(p => p.toLowerCase() === name.toLowerCase())) return;
+  partnerRooms.push(name);
+  localStorage.setItem('dama_rooms', JSON.stringify(partnerRooms));
+  input.value = '';
+  renderRoomButtons();
+  renderRoomList();
+}
+
+function removePartner(name) {
+  partnerRooms = partnerRooms.filter(p => p.toLowerCase() !== name.toLowerCase());
+  localStorage.setItem('dama_rooms', JSON.stringify(partnerRooms));
+  renderRoomButtons();
+  renderRoomList();
+}
+
+function getRoomChannelName(partner) {
+  const names = [myUsername.toLowerCase(), partner.toLowerCase()].sort();
+  return `room:${names[0]}-${names[1]}`;
+}
+
+async function enterRoom(partner) {
+  roomPartner = partner;
+  opponentUsername = partner;
+  inRoom = true;
+  isOnlineGame = true;
+  gameMode = 'online';
+  boardFlipped = false;
+  waitingForOpponent = true;
+  practiceMode = true;
+  gameOver = false;
+  aiAutoMode = false;
+
+  // Load persisted scores
+  loadPersistedScores();
+
+  // Join room channel
+  if (roomChannel) { sb.removeChannel(roomChannel); }
+  const chName = getRoomChannelName(partner);
+  roomChannel = sb.channel(chName, {
+    config: { presence: { key: myUsername } }
+  });
+
+  // Presence: detect when partner joins/leaves
+  roomChannel.on('presence', { event: 'sync' }, () => {
+    const state = roomChannel.presenceState();
+    const keys = Object.keys(state);
+    const partnerHere = keys.some(k => k.toLowerCase() !== myUsername.toLowerCase());
+    if (!opponentPresent && partnerHere && inRoom) {
+      opponentPresent = true;
+      updateStatusDot();
+      if (practiceMode) {
+        // Partner arrived! Start real game. Alphabetically first = creator.
+        const iAmCreator = myUsername.toLowerCase() < partner.toLowerCase();
+        myRole = iAmCreator ? 'creator' : 'joiner';
+        boardFlipped = myRole === 'joiner';
+        // Setup game channel (reuse room channel for moves)
+        if (gameChannel) sb.removeChannel(gameChannel);
+        gameChannel = roomChannel;
+        startOnlineGameInRoom();
+      }
+    }
+    if (opponentPresent && !partnerHere && inRoom) {
+      opponentPresent = false;
+      updateStatusDot();
+      // Partner left during game - go back to practice
+      if (!practiceMode && !gameOver) {
+        practiceMode = true;
+        waitingForOpponent = true;
+        npcThinking = false;
+        stopTurnTimer();
+        document.getElementById('mode-label').textContent = `Practice vs NPC — waiting for ${escHtml(partner)}`;
+        document.getElementById('resign-btn').classList.add('hidden');
+        // Don't reset board - keep state
+        render();
+      }
+    }
+  });
+
+  // Listen for game events on room channel
+  setupRoomGameListeners(roomChannel);
+
+  roomChannel.subscribe(async (status) => {
+    if (status === 'SUBSCRIBED') {
+      await roomChannel.track({ username: myUsername, online_at: new Date().toISOString() });
+      opponentPresent = false;
+    }
+  });
+
+  // Show game area with practice NPC
+  showGameArea();
+  document.getElementById('mode-label').textContent = `Practice vs NPC — waiting for ${escHtml(partner)}`;
+  document.getElementById('restart-btn').classList.add('hidden');
+  document.getElementById('resign-btn').classList.add('hidden');
+  document.getElementById('rematch-btn').classList.add('hidden');
+  resetGame();
+  updateOnlineScoreLabels();
+  updateWinScoreDisplay();
+}
+
+function setupRoomGameListeners(ch) {
+  ch.on('broadcast', { event: 'move' }, ({ payload }) => {
+    if (payload.sender !== myUsername) handleIncomingMove(payload);
+  });
+  ch.on('broadcast', { event: 'end_turn' }, ({ payload }) => {
+    if (payload.sender !== myUsername) handleIncomingEndTurn();
+  });
+  ch.on('broadcast', { event: 'game_over' }, ({ payload }) => {
+    if (payload.sender !== myUsername) handleIncomingGameOver(payload);
+  });
+  ch.on('broadcast', { event: 'resign' }, ({ payload }) => {
+    if (payload.sender !== myUsername) handleIncomingResign(payload);
+  });
+  ch.on('broadcast', { event: 'rematch_request' }, ({ payload }) => {
+    if (payload.sender !== myUsername) showRematchRequestOverlay();
+  });
+  ch.on('broadcast', { event: 'rematch_accept' }, ({ payload }) => {
+    if (payload.sender !== myUsername) executeRematch();
+  });
+  ch.on('broadcast', { event: 'rematch_decline' }, ({ payload }) => {
+    if (payload.sender !== myUsername) {
+      rematchRequested = false;
+      document.getElementById('rematch-btn').textContent = 'Rematch';
+      document.getElementById('rematch-btn').disabled = false;
+    }
+  });
+  ch.on('broadcast', { event: 'sync_request' }, ({ payload }) => {
+    if (payload.sender !== myUsername) {
+      ch.send({ type: 'broadcast', event: 'sync_response', payload: {
+        sender: myUsername, board, turn, chainPiece, moveNum
+      }});
+    }
+  });
+  ch.on('broadcast', { event: 'sync_response' }, ({ payload }) => {
+    if (payload.sender !== myUsername) {
+      board = payload.board; turn = payload.turn;
+      chainPiece = payload.chainPiece; moveNum = payload.moveNum;
+      mustCapturePieces = findMustCapture();
+      selected = null; validMoves = []; gameOver = false;
+      render();
+    }
+  });
+}
+
+function startOnlineGameInRoom() {
+  practiceMode = false;
+  waitingForOpponent = false;
+  gameOver = false;
+  npcThinking = false;
+  rematchRequested = false;
+  aiAutoMode = false;
+
+  clearBoardOverlay();
+  document.getElementById('board').classList.remove('disabled');
+  document.getElementById('mode-label').textContent = `Room: ${myUsername} vs ${opponentUsername}`;
+  document.getElementById('restart-btn').classList.add('hidden');
+  document.getElementById('resign-btn').classList.remove('hidden');
+  document.getElementById('rematch-btn').classList.add('hidden');
+
+  updateOnlineScoreLabels();
+  updateWinScoreDisplay();
+  resetGame();
+  startTurnTimer();
+}
+
+function leaveRoom() {
+  if (roomChannel) { sb.removeChannel(roomChannel); roomChannel = null; }
+  if (roomChannel === gameChannel) gameChannel = null;
+  inRoom = false;
+  roomPartner = '';
+  stopTurnTimer();
+}
+
+// ============================================================
 // Rejoin - Check for ongoing games
 // ============================================================
 async function checkForRejoinableGames() {
   const container = document.getElementById('rejoin-container');
   container.innerHTML = '';
   try {
-    // Check games where I'm creator
-    const { data: creatorGames } = await sb
-      .from('games')
-      .select('*')
-      .eq('status', 'playing')
-      .eq('creator_username', myUsername);
-
-    // Check games where I'm joiner
-    const { data: joinerGames } = await sb
-      .from('games')
-      .select('*')
-      .eq('status', 'playing')
-      .eq('joiner_username', myUsername);
-
+    const { data: creatorGames } = await sb.from('games').select('*').eq('status', 'playing').eq('creator_username', myUsername);
+    const { data: joinerGames } = await sb.from('games').select('*').eq('status', 'playing').eq('joiner_username', myUsername);
     const games = [...(creatorGames || []), ...(joinerGames || [])];
     if (games.length === 0) return;
-
     for (const game of games) {
       const isCreator = game.creator_username === myUsername;
       const oppName = isCreator ? game.joiner_username : game.creator_username;
@@ -680,44 +1073,28 @@ async function checkForRejoinableGames() {
 }
 
 async function rejoinGame(id, role, oppName) {
-  gameId = id;
-  myRole = role;
-  opponentUsername = oppName;
-  isOnlineGame = true;
-  gameMode = 'online';
+  gameId = id; myRole = role; opponentUsername = oppName;
+  isOnlineGame = true; gameMode = 'online';
   boardFlipped = myRole === 'joiner';
+  loadPersistedScores();
 
-  // Setup game channel
   if (gameChannel) { sb.removeChannel(gameChannel); }
-  gameChannel = sb.channel(`game:${gameId}`, {
-    config: { presence: { key: myUsername } }
-  });
-
+  gameChannel = sb.channel(`game:${gameId}`, { config: { presence: { key: myUsername } } });
   setupGameChannelListeners();
-
   gameChannel.subscribe(async (status) => {
     if (status === 'SUBSCRIBED') {
       await gameChannel.track({ username: myUsername, online_at: new Date().toISOString() });
       opponentPresent = false;
-      // Request board state from opponent
-      gameChannel.send({
-        type: 'broadcast',
-        event: 'sync_request',
-        payload: { sender: myUsername }
-      });
+      gameChannel.send({ type: 'broadcast', event: 'sync_request', payload: { sender: myUsername } });
     }
   });
 
-  // Setup UI
   showGameArea();
   document.getElementById('mode-label').textContent = `Online: ${myUsername} vs ${opponentUsername}`;
   document.getElementById('restart-btn').classList.add('hidden');
   document.getElementById('resign-btn').classList.remove('hidden');
   updateOnlineScoreLabels();
-
   updateWinScoreDisplay();
-
-  // Init board (will be overwritten by sync_response)
   resetGame();
   const statusEl = document.getElementById('status');
   statusEl.textContent = 'Reconnecting... waiting for sync';
@@ -731,44 +1108,24 @@ async function showLobby() {
   showScreen('lobby-screen');
   await refreshLobby();
   if (lobbySubscription) lobbySubscription.unsubscribe();
-  lobbySubscription = sb
-    .channel('lobby-changes')
-    .on('postgres_changes', {
-      event: '*',
-      schema: 'public',
-      table: 'games',
-      filter: 'status=in.(waiting,pending_accept)'
-    }, () => refreshLobby())
+  lobbySubscription = sb.channel('lobby-changes')
+    .on('postgres_changes', { event: '*', schema: 'public', table: 'games', filter: 'status=in.(waiting,pending_accept)' }, () => refreshLobby())
     .subscribe();
 }
 
 async function refreshLobby() {
   const fiveMinAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-  const { data: games } = await sb
-    .from('games')
-    .select('*')
-    .eq('status', 'waiting')
-    .gt('created_at', fiveMinAgo)
-    .order('created_at', { ascending: false });
-
+  const { data: games } = await sb.from('games').select('*').eq('status', 'waiting').gt('created_at', fiveMinAgo).order('created_at', { ascending: false });
   const list = document.getElementById('lobby-list');
   if (!games || games.length === 0) {
     list.innerHTML = '<div class="lobby-empty">No games available. Create one!</div>';
     return;
   }
-  list.innerHTML = games
-    .filter(g => g.creator_username !== myUsername)
-    .map(g => {
-      const ago = Math.floor((Date.now() - new Date(g.created_at).getTime()) / 1000);
-      const timeStr = ago < 60 ? `${ago}s ago` : `${Math.floor(ago/60)}m ago`;
-      return `<div class="lobby-item">
-        <div>
-          <span class="creator">${escHtml(g.creator_username)}</span>
-          <span class="time">${timeStr}</span>
-        </div>
-        <button class="join-btn" onclick="joinGame('${g.id}','${escHtml(g.creator_username)}')">Join</button>
-      </div>`;
-    }).join('') || '<div class="lobby-empty">No games available. Create one!</div>';
+  list.innerHTML = games.filter(g => g.creator_username !== myUsername).map(g => {
+    const ago = Math.floor((Date.now() - new Date(g.created_at).getTime()) / 1000);
+    const timeStr = ago < 60 ? `${ago}s ago` : `${Math.floor(ago/60)}m ago`;
+    return `<div class="lobby-item"><div><span class="creator">${escHtml(g.creator_username)}</span> <span class="time">${timeStr}</span></div><button class="join-btn" onclick="joinGame('${g.id}','${escHtml(g.creator_username)}')">Join</button></div>`;
+  }).join('') || '<div class="lobby-empty">No games available. Create one!</div>';
 }
 
 function leaveLobby() {
@@ -777,66 +1134,40 @@ function leaveLobby() {
 }
 
 // ============================================================
-// Create Game (shows board in disabled state)
+// Create Game
 // ============================================================
 async function createOnlineGame() {
-  const { data, error } = await sb
-    .from('games')
-    .insert({ creator_username: myUsername })
-    .select()
-    .single();
-
+  const { data, error } = await sb.from('games').insert({ creator_username: myUsername }).select().single();
   if (error) { alert('Failed to create game: ' + error.message); return; }
 
-  gameId = data.id;
-  myRole = 'creator';
-  isOnlineGame = true;
-  gameMode = 'online';
-  boardFlipped = false;
-  waitingForOpponent = true;
-  practiceMode = true;
-
+  gameId = data.id; myRole = 'creator'; isOnlineGame = true; gameMode = 'online';
+  boardFlipped = false; waitingForOpponent = true; practiceMode = true;
   if (lobbySubscription) { lobbySubscription.unsubscribe(); lobbySubscription = null; }
 
-  // Show game area with practice NPC game while waiting
   showGameArea();
   document.getElementById('mode-label').textContent = `Practice vs NPC — waiting for opponent`;
   document.getElementById('restart-btn').classList.add('hidden');
   document.getElementById('resign-btn').classList.add('hidden');
   document.getElementById('rematch-btn').classList.add('hidden');
-
   resetGame();
 
-  // Subscribe to this game's changes
   if (gameSubscription) gameSubscription.unsubscribe();
-  gameSubscription = sb
-    .channel(`game-watch-${gameId}`)
-    .on('postgres_changes', {
-      event: 'UPDATE',
-      schema: 'public',
-      table: 'games',
-      filter: `id=eq.${gameId}`
-    }, payload => handleGameUpdate(payload.new))
+  gameSubscription = sb.channel(`game-watch-${gameId}`)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` }, payload => handleGameUpdate(payload.new))
     .subscribe();
 }
 
 function handleGameUpdate(game) {
   if (myRole === 'creator') {
     if (game.status === 'pending_accept' && game.joiner_username) {
-      // Show join request as overlay on the board
       opponentUsername = game.joiner_username;
       showJoinRequestOverlay(game.joiner_username);
     }
-    if (game.status === 'playing') {
-      startOnlineGame();
-    }
+    if (game.status === 'playing') { startOnlineGame(); }
   }
   if (myRole === 'joiner') {
-    if (game.status === 'playing') {
-      startOnlineGame();
-    }
+    if (game.status === 'playing') { startOnlineGame(); }
     if (game.status === 'waiting' && !game.joiner_username) {
-      // Declined
       document.getElementById('joining-status').textContent = 'Host declined. Returning to lobby...';
       setTimeout(() => showLobby(), 1500);
     }
@@ -845,16 +1176,7 @@ function handleGameUpdate(game) {
 
 function showJoinRequestOverlay(joinerName) {
   const container = document.getElementById('board-overlay-container');
-  container.innerHTML = `
-    <div class="board-overlay">
-      <div class="board-overlay-box">
-        <h3>${escHtml(joinerName)} wants to play!</h3>
-        <div style="display:flex; gap:12px;">
-          <button class="accept-btn" onclick="acceptJoin()">Accept</button>
-          <button class="decline-btn" onclick="declineJoin()">Decline</button>
-        </div>
-      </div>
-    </div>`;
+  container.innerHTML = `<div class="board-overlay"><div class="board-overlay-box"><h3>${escHtml(joinerName)} wants to play!</h3><div style="display:flex; gap:12px;"><button class="accept-btn" onclick="acceptJoin()">Accept</button><button class="decline-btn" onclick="declineJoin()">Decline</button></div></div></div>`;
 }
 
 function clearBoardOverlay() {
@@ -862,58 +1184,33 @@ function clearBoardOverlay() {
 }
 
 async function cancelWaiting() {
-  if (gameId) {
-    await sb.from('games').update({ status: 'abandoned' }).eq('id', gameId);
-  }
-  cleanupOnline();
-  showLobby();
+  if (gameId) { await sb.from('games').update({ status: 'abandoned' }).eq('id', gameId); }
+  cleanupOnline(); showLobby();
 }
 
 // ============================================================
 // Join Game
 // ============================================================
 async function joinGame(id, creatorName) {
-  const { data, error } = await sb
-    .from('games')
+  const { data, error } = await sb.from('games')
     .update({ joiner_username: myUsername, status: 'pending_accept', joined_at: new Date().toISOString() })
-    .eq('id', id)
-    .is('joiner_username', null)
-    .select()
-    .single();
+    .eq('id', id).is('joiner_username', null).select().single();
+  if (error || !data) { alert('Could not join - someone else may have joined first.'); refreshLobby(); return; }
 
-  if (error || !data) {
-    alert('Could not join - someone else may have joined first.');
-    refreshLobby();
-    return;
-  }
-
-  gameId = id;
-  myRole = 'joiner';
-  opponentUsername = creatorName;
+  gameId = id; myRole = 'joiner'; opponentUsername = creatorName;
   if (lobbySubscription) { lobbySubscription.unsubscribe(); lobbySubscription = null; }
   showScreen('joining-screen');
   document.getElementById('joining-status').textContent = `Waiting for ${escHtml(creatorName)} to accept...`;
 
   if (gameSubscription) gameSubscription.unsubscribe();
-  gameSubscription = sb
-    .channel(`game-watch-${gameId}`)
-    .on('postgres_changes', {
-      event: 'UPDATE',
-      schema: 'public',
-      table: 'games',
-      filter: `id=eq.${gameId}`
-    }, payload => handleGameUpdate(payload.new))
+  gameSubscription = sb.channel(`game-watch-${gameId}`)
+    .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'games', filter: `id=eq.${gameId}` }, payload => handleGameUpdate(payload.new))
     .subscribe();
 }
 
 async function cancelJoining() {
-  if (gameId) {
-    await sb.from('games')
-      .update({ joiner_username: null, status: 'waiting' })
-      .eq('id', gameId);
-  }
-  cleanupOnline();
-  showLobby();
+  if (gameId) { await sb.from('games').update({ joiner_username: null, status: 'waiting' }).eq('id', gameId); }
+  cleanupOnline(); showLobby();
 }
 
 // ============================================================
@@ -921,21 +1218,15 @@ async function cancelJoining() {
 // ============================================================
 async function acceptJoin() {
   clearBoardOverlay();
-  await sb.from('games')
-    .update({ status: 'playing', started_at: new Date().toISOString() })
-    .eq('id', gameId);
+  await sb.from('games').update({ status: 'playing', started_at: new Date().toISOString() }).eq('id', gameId);
 }
 
 async function declineJoin() {
   clearBoardOverlay();
-  await sb.from('games')
-    .update({ joiner_username: null, status: 'waiting' })
-    .eq('id', gameId);
+  await sb.from('games').update({ joiner_username: null, status: 'waiting' }).eq('id', gameId);
   opponentUsername = '';
-  // Resume practice NPC if it's Black's turn
   if (practiceMode && turn === BLACK && !npcThinking && !gameOver) {
-    npcThinking = true;
-    setTimeout(() => npcMove(), 500);
+    npcThinking = true; setTimeout(() => npcMove(), 500);
   }
 }
 
@@ -943,91 +1234,30 @@ async function declineJoin() {
 // Setup Game Channel Listeners
 // ============================================================
 function setupGameChannelListeners() {
-  // Listen for moves
-  gameChannel.on('broadcast', { event: 'move' }, ({ payload }) => {
-    if (payload.sender !== myUsername) {
-      handleIncomingMove(payload);
-    }
-  });
-
-  gameChannel.on('broadcast', { event: 'end_turn' }, ({ payload }) => {
-    if (payload.sender !== myUsername) {
-      handleIncomingEndTurn();
-    }
-  });
-
-  gameChannel.on('broadcast', { event: 'game_over' }, ({ payload }) => {
-    if (payload.sender !== myUsername) {
-      handleIncomingGameOver(payload);
-    }
-  });
-
-  gameChannel.on('broadcast', { event: 'resign' }, ({ payload }) => {
-    if (payload.sender !== myUsername) {
-      handleIncomingResign(payload);
-    }
-  });
-
-  // Rematch events
-  gameChannel.on('broadcast', { event: 'rematch_request' }, ({ payload }) => {
-    if (payload.sender !== myUsername) {
-      showRematchRequestOverlay();
-    }
-  });
-
-  gameChannel.on('broadcast', { event: 'rematch_accept' }, ({ payload }) => {
-    if (payload.sender !== myUsername) {
-      executeRematch();
-    }
-  });
-
+  gameChannel.on('broadcast', { event: 'move' }, ({ payload }) => { if (payload.sender !== myUsername) handleIncomingMove(payload); });
+  gameChannel.on('broadcast', { event: 'end_turn' }, ({ payload }) => { if (payload.sender !== myUsername) handleIncomingEndTurn(); });
+  gameChannel.on('broadcast', { event: 'game_over' }, ({ payload }) => { if (payload.sender !== myUsername) handleIncomingGameOver(payload); });
+  gameChannel.on('broadcast', { event: 'resign' }, ({ payload }) => { if (payload.sender !== myUsername) handleIncomingResign(payload); });
+  gameChannel.on('broadcast', { event: 'rematch_request' }, ({ payload }) => { if (payload.sender !== myUsername) showRematchRequestOverlay(); });
+  gameChannel.on('broadcast', { event: 'rematch_accept' }, ({ payload }) => { if (payload.sender !== myUsername) executeRematch(); });
   gameChannel.on('broadcast', { event: 'rematch_decline' }, ({ payload }) => {
-    if (payload.sender !== myUsername) {
-      rematchRequested = false;
-      document.getElementById('rematch-btn').textContent = 'Rematch';
-      document.getElementById('rematch-btn').disabled = false;
-    }
+    if (payload.sender !== myUsername) { rematchRequested = false; document.getElementById('rematch-btn').textContent = 'Rematch'; document.getElementById('rematch-btn').disabled = false; }
   });
-
-  // Sync events (for rejoin)
   gameChannel.on('broadcast', { event: 'sync_request' }, ({ payload }) => {
     if (payload.sender !== myUsername) {
-      // Send our board state to the reconnecting player
-      gameChannel.send({
-        type: 'broadcast',
-        event: 'sync_response',
-        payload: {
-          sender: myUsername,
-          board: board,
-          turn: turn,
-          chainPiece: chainPiece,
-          moveNum: moveNum
-        }
-      });
+      gameChannel.send({ type: 'broadcast', event: 'sync_response', payload: { sender: myUsername, board, turn, chainPiece, moveNum } });
     }
   });
-
   gameChannel.on('broadcast', { event: 'sync_response' }, ({ payload }) => {
     if (payload.sender !== myUsername) {
-      // Restore board state from opponent
-      board = payload.board;
-      turn = payload.turn;
-      chainPiece = payload.chainPiece;
-      moveNum = payload.moveNum;
-      mustCapturePieces = findMustCapture();
-      selected = null;
-      validMoves = [];
-      gameOver = false;
-      render();
+      board = payload.board; turn = payload.turn; chainPiece = payload.chainPiece; moveNum = payload.moveNum;
+      mustCapturePieces = findMustCapture(); selected = null; validMoves = []; gameOver = false; render();
     }
   });
-
-  // Presence for disconnect detection
   gameChannel.on('presence', { event: 'sync' }, () => {
     const state = gameChannel.presenceState();
     const keys = Object.keys(state);
-    const opponentHere = keys.some(k => k !== myUsername);
-    opponentPresent = opponentHere;
+    opponentPresent = keys.some(k => k !== myUsername);
     updateStatusDot();
   });
 }
@@ -1036,37 +1266,18 @@ function setupGameChannelListeners() {
 // Start Online Game
 // ============================================================
 function startOnlineGame() {
-  isOnlineGame = true;
-  gameMode = 'online';
-  waitingForOpponent = false;
-  practiceMode = false;
-  gameOver = false;
-  npcThinking = false;
-  rematchRequested = false;
+  isOnlineGame = true; gameMode = 'online'; waitingForOpponent = false;
+  practiceMode = false; gameOver = false; npcThinking = false; rematchRequested = false; aiAutoMode = false;
 
-  // Creator = RED (plays normally), Joiner = BLACK (board flipped)
-  if (myRole === 'creator') {
-    boardFlipped = false;
-  } else {
-    boardFlipped = true;
-  }
+  if (myRole === 'creator') { boardFlipped = false; } else { boardFlipped = true; }
 
-  // Setup game channel for moves
   if (gameChannel) { sb.removeChannel(gameChannel); }
-  gameChannel = sb.channel(`game:${gameId}`, {
-    config: { presence: { key: myUsername } }
-  });
-
+  gameChannel = sb.channel(`game:${gameId}`, { config: { presence: { key: myUsername } } });
   setupGameChannelListeners();
-
   gameChannel.subscribe(async (status) => {
-    if (status === 'SUBSCRIBED') {
-      await gameChannel.track({ username: myUsername, online_at: new Date().toISOString() });
-      opponentPresent = false;
-    }
+    if (status === 'SUBSCRIBED') { await gameChannel.track({ username: myUsername, online_at: new Date().toISOString() }); opponentPresent = false; }
   });
 
-  // Setup UI
   showGameArea();
   clearBoardOverlay();
   document.getElementById('board').classList.remove('disabled');
@@ -1075,35 +1286,26 @@ function startOnlineGame() {
   document.getElementById('resign-btn').classList.remove('hidden');
   document.getElementById('rematch-btn').classList.add('hidden');
 
+  loadPersistedScores();
   updateOnlineScoreLabels();
-
   updateWinScoreDisplay();
-
   resetGame();
+  startTurnTimer();
 }
 
 function updateOnlineScoreLabels() {
-  if (boardFlipped) {
-    document.querySelector('.score-red').innerHTML = `You (${escHtml(myUsername)}): <b id="red-count">12</b>`;
-    document.querySelector('.score-black').innerHTML = `${escHtml(opponentUsername)}: <b id="black-count">12</b> <span id="opponent-status-dot" class="status-dot hidden"></span>`;
-  } else {
-    document.querySelector('.score-red').innerHTML = `You (${escHtml(myUsername)}): <b id="red-count">12</b>`;
-    document.querySelector('.score-black').innerHTML = `${escHtml(opponentUsername)}: <b id="black-count">12</b> <span id="opponent-status-dot" class="status-dot hidden"></span>`;
-  }
+  document.querySelector('.score-red').innerHTML = `You (${escHtml(myUsername)}): <b id="red-count">12</b>`;
+  document.querySelector('.score-black').innerHTML = `${escHtml(opponentUsername)}: <b id="black-count">12</b> <span id="opponent-status-dot" class="status-dot hidden"></span>`;
 }
 
 // ============================================================
-// Status Dot (replaces disconnect overlay)
+// Status Dot
 // ============================================================
 function updateStatusDot() {
   const dot = document.getElementById('opponent-status-dot');
   if (!dot || !isOnlineGame) return;
   dot.classList.remove('hidden');
-  if (opponentPresent) {
-    dot.className = 'status-dot online';
-  } else {
-    dot.className = 'status-dot offline';
-  }
+  dot.className = opponentPresent ? 'status-dot online' : 'status-dot offline';
 }
 
 // ============================================================
@@ -1120,35 +1322,20 @@ function isMyTurn() {
 // ============================================================
 function broadcastMove(fromRow, fromCol, move) {
   if (!isOnlineGame || !gameChannel) return;
-  gameChannel.send({
-    type: 'broadcast',
-    event: 'move',
-    payload: {
-      sender: myUsername,
-      fromRow, fromCol,
-      toRow: move.row, toCol: move.col,
-      capturedRow: move.capturedRow, capturedCol: move.capturedCol,
-      isChain: !!chainPiece
-    }
-  });
+  gameChannel.send({ type: 'broadcast', event: 'move', payload: {
+    sender: myUsername, fromRow, fromCol, toRow: move.row, toCol: move.col,
+    capturedRow: move.capturedRow, capturedCol: move.capturedCol, isChain: !!chainPiece
+  }});
 }
 
 function broadcastEndTurn() {
   if (!isOnlineGame || !gameChannel) return;
-  gameChannel.send({
-    type: 'broadcast',
-    event: 'end_turn',
-    payload: { sender: myUsername }
-  });
+  gameChannel.send({ type: 'broadcast', event: 'end_turn', payload: { sender: myUsername } });
 }
 
 function broadcastGameOver(winnerName) {
   if (!isOnlineGame || !gameChannel) return;
-  gameChannel.send({
-    type: 'broadcast',
-    event: 'game_over',
-    payload: { sender: myUsername, winner: winnerName }
-  });
+  gameChannel.send({ type: 'broadcast', event: 'game_over', payload: { sender: myUsername, winner: winnerName } });
 }
 
 // ============================================================
@@ -1157,56 +1344,40 @@ function broadcastGameOver(winnerName) {
 function handleIncomingMove(payload) {
   const { fromRow, fromCol, toRow, toCol, capturedRow, capturedCol, isChain } = payload;
   isReceivingMove = true;
-
-  if (isChain) {
-    chainPiece = { row: fromRow, col: fromCol };
-  } else {
-    selected = { row: fromRow, col: fromCol };
-  }
-
+  if (isChain) { chainPiece = { row: fromRow, col: fromCol }; }
+  else { selected = { row: fromRow, col: fromCol }; }
   const move = { row: toRow, col: toCol };
-  if (capturedRow !== undefined && capturedRow !== null) {
-    move.capturedRow = capturedRow;
-    move.capturedCol = capturedCol;
-  }
-
+  if (capturedRow !== undefined && capturedRow !== null) { move.capturedRow = capturedRow; move.capturedCol = capturedCol; }
   validMoves = [move];
   movePiece(move);
   isReceivingMove = false;
 }
 
-function handleIncomingEndTurn() {
-  // Safety net for desync
-}
+function handleIncomingEndTurn() { /* safety net */ }
 
 function handleIncomingGameOver(payload) {
   gameOver = true;
+  stopTurnTimer();
   const statusEl = document.getElementById('status');
-  if (payload.winner === myUsername) {
-    statusEl.textContent = 'You win!';
-    opponentWins = opponentWins; // no change
-  } else {
-    statusEl.textContent = `${escHtml(payload.winner)} wins!`;
-  }
-  // Win counter is updated by the winner's endTurn, so for the loser:
-  // The loser increments opponent's wins
+  if (payload.winner === myUsername) { statusEl.textContent = 'You win!'; }
+  else { statusEl.textContent = `${escHtml(payload.winner)} wins!`; }
   opponentWins++;
   lastWinnerUsername = payload.winner;
   updateWinScoreDisplay();
-  statusEl.className = '';
-  statusEl.style.background = '#2a5a2a';
+  savePersistedScores();
+  statusEl.className = ''; statusEl.style.background = '#2a5a2a';
   showRematchButton();
 }
 
 function handleIncomingResign(payload) {
   gameOver = true;
+  stopTurnTimer();
   const statusEl = document.getElementById('status');
   statusEl.textContent = `${escHtml(payload.sender)} resigned. You win!`;
-  statusEl.className = '';
-  statusEl.style.background = '#2a5a2a';
-  myWins++;
-  lastWinnerUsername = myUsername;
+  statusEl.className = ''; statusEl.style.background = '#2a5a2a';
+  myWins++; lastWinnerUsername = myUsername;
   updateWinScoreDisplay();
+  savePersistedScores();
   finishOnlineGame(myUsername);
   showRematchButton();
 }
@@ -1217,19 +1388,14 @@ function handleIncomingResign(payload) {
 async function resignGame() {
   if (!isOnlineGame) return;
   if (!confirm('Are you sure you want to resign?')) return;
-  gameChannel.send({
-    type: 'broadcast',
-    event: 'resign',
-    payload: { sender: myUsername }
-  });
+  gameChannel.send({ type: 'broadcast', event: 'resign', payload: { sender: myUsername } });
   gameOver = true;
+  stopTurnTimer();
   const statusEl = document.getElementById('status');
-  statusEl.textContent = 'You resigned.';
-  statusEl.className = '';
-  statusEl.style.background = '#5a2a2a';
-  opponentWins++;
-  lastWinnerUsername = opponentUsername;
+  statusEl.textContent = 'You resigned.'; statusEl.className = ''; statusEl.style.background = '#5a2a2a';
+  opponentWins++; lastWinnerUsername = opponentUsername;
   updateWinScoreDisplay();
+  savePersistedScores();
   finishOnlineGame(opponentUsername);
   showRematchButton();
 }
@@ -1239,14 +1405,7 @@ async function resignGame() {
 // ============================================================
 function updateWinScoreDisplay() {
   const el = document.getElementById('win-score');
-  if (!isOnlineGame) {
-    el.classList.add('hidden');
-    return;
-  }
-  if (myWins === 0 && opponentWins === 0) {
-    el.classList.add('hidden');
-    return;
-  }
+  if (!isOnlineGame) { el.classList.add('hidden'); return; }
   el.classList.remove('hidden');
   el.textContent = `${escHtml(myUsername)}: ${myWins} — ${escHtml(opponentUsername)}: ${opponentWins}`;
 }
@@ -1268,129 +1427,83 @@ function requestRematch() {
   rematchRequested = true;
   document.getElementById('rematch-btn').textContent = 'Waiting...';
   document.getElementById('rematch-btn').disabled = true;
-  gameChannel.send({
-    type: 'broadcast',
-    event: 'rematch_request',
-    payload: { sender: myUsername }
-  });
+  gameChannel.send({ type: 'broadcast', event: 'rematch_request', payload: { sender: myUsername } });
 }
 
 function showRematchRequestOverlay() {
-  // If we also requested, auto-accept
   if (rematchRequested) {
-    gameChannel.send({
-      type: 'broadcast',
-      event: 'rematch_accept',
-      payload: { sender: myUsername }
-    });
-    executeRematch();
-    return;
+    gameChannel.send({ type: 'broadcast', event: 'rematch_accept', payload: { sender: myUsername } });
+    executeRematch(); return;
   }
-
   const container = document.getElementById('board-overlay-container');
-  container.innerHTML = `
-    <div class="rematch-overlay">
-      <div class="board-overlay-box">
-        <h3>${escHtml(opponentUsername)} wants a rematch!</h3>
-        <div style="display:flex; gap:12px;">
-          <button class="accept-btn" onclick="acceptRematch()">Accept</button>
-          <button class="decline-btn" onclick="declineRematch()">Decline</button>
-        </div>
-      </div>
-    </div>`;
+  container.innerHTML = `<div class="rematch-overlay"><div class="board-overlay-box"><h3>${escHtml(opponentUsername)} wants a rematch!</h3><div style="display:flex; gap:12px;"><button class="accept-btn" onclick="acceptRematch()">Accept</button><button class="decline-btn" onclick="declineRematch()">Decline</button></div></div></div>`;
 }
 
 function acceptRematch() {
   clearBoardOverlay();
-  gameChannel.send({
-    type: 'broadcast',
-    event: 'rematch_accept',
-    payload: { sender: myUsername }
-  });
+  gameChannel.send({ type: 'broadcast', event: 'rematch_accept', payload: { sender: myUsername } });
   executeRematch();
 }
 
 function declineRematch() {
   clearBoardOverlay();
-  gameChannel.send({
-    type: 'broadcast',
-    event: 'rematch_decline',
-    payload: { sender: myUsername }
-  });
+  gameChannel.send({ type: 'broadcast', event: 'rematch_decline', payload: { sender: myUsername } });
 }
 
 function executeRematch() {
   clearBoardOverlay();
   rematchRequested = false;
+  aiAutoMode = false;
 
-  // Winner gets first move (creator = RED = first)
-  if (lastWinnerUsername === myUsername) {
-    myRole = 'creator';
-    boardFlipped = false;
-  } else {
-    myRole = 'joiner';
-    boardFlipped = true;
-  }
+  if (lastWinnerUsername === myUsername) { myRole = 'creator'; boardFlipped = false; }
+  else { myRole = 'joiner'; boardFlipped = true; }
 
   gameOver = false;
   document.getElementById('rematch-btn').classList.add('hidden');
   document.getElementById('resign-btn').classList.remove('hidden');
   document.getElementById('board').classList.remove('disabled');
   updateOnlineScoreLabels();
-  document.getElementById('mode-label').textContent = `Online: ${myUsername} vs ${opponentUsername}`;
+  document.getElementById('mode-label').textContent = inRoom
+    ? `Room: ${myUsername} vs ${opponentUsername}`
+    : `Online: ${myUsername} vs ${opponentUsername}`;
   resetGame();
+  startTurnTimer();
 }
 
-// ============================================================
-// Finish online game
-// ============================================================
 async function finishOnlineGame(winnerName) {
   if (gameId) {
     await sb.from('games').update({
-      status: 'finished',
-      winner_username: winnerName,
-      finished_at: new Date().toISOString()
+      status: 'finished', winner_username: winnerName, finished_at: new Date().toISOString()
     }).eq('id', gameId);
   }
 }
 
 // ============================================================
-// AI Assist (for "satoru"/"Satoru")
+// AI Assist (secret for "satoru")
 // ============================================================
-
 function aiAssistMove() {
   if (!isOnlineGame || !isMyTurn() || gameOver || chainPiece) return;
-
   const mySide = myRole === 'creator' ? RED : BLACK;
   const bestMove = aiFindBestMove(mySide);
   if (!bestMove) return;
-
   selected = { row: bestMove.fromRow, col: bestMove.fromCol };
-  // Compute valid moves for this piece
   const caps = getCaptures(bestMove.fromRow, bestMove.fromCol);
   validMoves = caps.length > 0 ? caps : getMoves(bestMove.fromRow, bestMove.fromCol);
   movePiece(bestMove.move);
 }
 
 function aiFindBestMove(side) {
-  const depth = 5;
+  const depth = 6;
   const allMoves = getAllMoves(side);
   if (allMoves.length === 0) return null;
-
   let bestMove = null, bestScore = -Infinity;
   const isBlackSide = side === BLACK;
-
   for (const m of allMoves) {
     const simBoard = cloneBoard();
     simulateMove(simBoard, m.fromRow, m.fromCol, m.move);
-    // minimax evaluateBoard scores BLACK positively
-    // If side is BLACK, we maximize normally. If RED, we negate.
     let score;
-    if (isBlackSide) {
-      score = minimax(simBoard, depth - 1, -Infinity, Infinity, false);
-    } else {
-      score = -minimax(simBoard, depth - 1, -Infinity, Infinity, true);
-    }
+    if (isBlackSide) { score = minimax(simBoard, depth - 1, -Infinity, Infinity, false); }
+    else { score = -minimax(simBoard, depth - 1, -Infinity, Infinity, true); }
     if (score > bestScore) { bestScore = score; bestMove = m; }
   }
   return bestMove;
@@ -1400,37 +1513,28 @@ function aiFindBestMove(side) {
 // Cleanup
 // ============================================================
 function cleanupOnline() {
-  if (gameChannel) { sb.removeChannel(gameChannel); gameChannel = null; }
+  if (gameChannel && gameChannel !== roomChannel) { sb.removeChannel(gameChannel); }
+  gameChannel = null;
   if (gameSubscription) { gameSubscription.unsubscribe(); gameSubscription = null; }
   if (lobbySubscription) { lobbySubscription.unsubscribe(); lobbySubscription = null; }
+  leaveRoom();
   clearBoardOverlay();
-  gameId = null;
-  myRole = null;
-  opponentUsername = '';
-  isOnlineGame = false;
-  boardFlipped = false;
-  isReceivingMove = false;
-  opponentPresent = false;
-  waitingForOpponent = false;
-  practiceMode = false;
-  gameOver = false;
-  rematchRequested = false;
-  lastWinnerUsername = '';
-  myWins = 0;
-  opponentWins = 0;
+  stopTurnTimer();
+  gameId = null; myRole = null; opponentUsername = ''; isOnlineGame = false;
+  boardFlipped = false; isReceivingMove = false; opponentPresent = false;
+  waitingForOpponent = false; practiceMode = false; gameOver = false;
+  rematchRequested = false; lastWinnerUsername = ''; aiAutoMode = false;
+  myWins = 0; opponentWins = 0;
   document.getElementById('win-score').classList.add('hidden');
   const dot = document.getElementById('opponent-status-dot');
   if (dot) dot.classList.add('hidden');
 }
 
 // ============================================================
-// Game Logic (original + online hooks)
+// Game Logic
 // ============================================================
 function startGame(mode) {
-  gameMode = mode;
-  isOnlineGame = false;
-  boardFlipped = false;
-  gameOver = false;
+  gameMode = mode; isOnlineGame = false; boardFlipped = false; gameOver = false; aiAutoMode = false;
   showGameArea();
   const labels = { '2p': '2 Players', 'easy': 'vs NPC (Easy)', 'medium': 'vs NPC (Medium)', 'hard': 'vs NPC (Hard)' };
   document.getElementById('mode-label').textContent = labels[mode];
@@ -1438,7 +1542,6 @@ function startGame(mode) {
   document.getElementById('resign-btn').classList.add('hidden');
   document.getElementById('rematch-btn').classList.add('hidden');
   document.getElementById('win-score').classList.add('hidden');
-  // Reset score labels
   document.querySelector('.score-red').innerHTML = 'Red (You): <b id="red-count">12</b>';
   document.querySelector('.score-black').innerHTML = 'Black: <b id="black-count">12</b>';
   resetGame();
@@ -1446,24 +1549,21 @@ function startGame(mode) {
 
 function leaveGame() {
   if (isOnlineGame) {
-    if (practiceMode) {
-      // Still waiting for opponent — just cancel the game
-      if (gameId) {
-        sb.from('games').update({ status: 'abandoned' }).eq('id', gameId);
+    if (practiceMode || inRoom) {
+      if (inRoom && !practiceMode && !gameOver) {
+        if (!confirm('Leave the room?')) return;
       }
+      if (gameId) { sb.from('games').update({ status: 'abandoned' }).eq('id', gameId); }
     } else if (!gameOver) {
       if (!confirm('Leave the game? This counts as a resignation.')) return;
-      gameChannel?.send({
-        type: 'broadcast',
-        event: 'resign',
-        payload: { sender: myUsername }
-      });
+      gameChannel?.send({ type: 'broadcast', event: 'resign', payload: { sender: myUsername } });
       finishOnlineGame(opponentUsername);
     }
     cleanupOnline();
     showScreen('mode-select');
     document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
     checkForRejoinableGames();
+    renderRoomButtons();
   } else {
     backToMenu();
   }
@@ -1474,44 +1574,33 @@ function backToMenu() {
   document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
   npcThinking = false;
   checkForRejoinableGames();
+  renderRoomButtons();
 }
 
 function initBoard() {
   board = Array.from({ length: 8 }, () => Array(8).fill(EMPTY));
-  for (let r = 0; r < 3; r++)
-    for (let c = 0; c < 8; c++)
-      if ((r + c) % 2 === 1) board[r][c] = BLACK;
-  for (let r = 5; r < 8; r++)
-    for (let c = 0; c < 8; c++)
-      if ((r + c) % 2 === 1) board[r][c] = RED;
+  for (let r = 0; r < 3; r++) for (let c = 0; c < 8; c++) if ((r + c) % 2 === 1) board[r][c] = BLACK;
+  for (let r = 5; r < 8; r++) for (let c = 0; c < 8; c++) if ((r + c) % 2 === 1) board[r][c] = RED;
 }
 
 function getCaptures(r, c, brd) {
-  const b = brd || board;
-  const p = b[r][c];
+  const b = brd || board; const p = b[r][c];
   if (p === EMPTY) return [];
-  const dirs = [[-1,-1],[-1,1],[1,-1],[1,1]];
-  const caps = [];
-
+  const dirs = [[-1,-1],[-1,1],[1,-1],[1,1]]; const caps = [];
   if (isKing(p)) {
     for (const [dr, dc] of dirs) {
       let sr = r + dr, sc = c + dc;
-      while (sr >= 0 && sr <= 7 && sc >= 0 && sc <= 7 && b[sr][sc] === EMPTY) {
-        sr += dr; sc += dc;
-      }
+      while (sr >= 0 && sr <= 7 && sc >= 0 && sc <= 7 && b[sr][sc] === EMPTY) { sr += dr; sc += dc; }
       if (sr >= 0 && sr <= 7 && sc >= 0 && sc <= 7 && owner(b[sr][sc]) !== owner(p)) {
-        const er = sr, ec = sc;
-        let lr = er + dr, lc = ec + dc;
+        const er = sr, ec = sc; let lr = er + dr, lc = ec + dc;
         while (lr >= 0 && lr <= 7 && lc >= 0 && lc <= 7 && b[lr][lc] === EMPTY) {
-          caps.push({ row: lr, col: lc, capturedRow: er, capturedCol: ec });
-          lr += dr; lc += dc;
+          caps.push({ row: lr, col: lc, capturedRow: er, capturedCol: ec }); lr += dr; lc += dc;
         }
       }
     }
   } else {
     for (const [dr, dc] of dirs) {
-      const mr = r + dr, mc = c + dc;
-      const lr = r + 2*dr, lc = c + 2*dc;
+      const mr = r + dr, mc = c + dc, lr = r + 2*dr, lc = c + 2*dc;
       if (lr < 0 || lr > 7 || lc < 0 || lc > 7) continue;
       if (b[mr][mc] !== EMPTY && owner(b[mr][mc]) !== owner(p) && b[lr][lc] === EMPTY) {
         caps.push({ row: lr, col: lc, capturedRow: mr, capturedCol: mc });
@@ -1522,27 +1611,19 @@ function getCaptures(r, c, brd) {
 }
 
 function getMoves(r, c, brd) {
-  const b = brd || board;
-  const p = b[r][c];
-  if (p === EMPTY) return [];
-  const moves = [];
-
+  const b = brd || board; const p = b[r][c];
+  if (p === EMPTY) return []; const moves = [];
   if (isKing(p)) {
     const dirs = [[-1,-1],[-1,1],[1,-1],[1,1]];
     for (const [dr, dc] of dirs) {
       let nr = r + dr, nc = c + dc;
-      while (nr >= 0 && nr <= 7 && nc >= 0 && nc <= 7 && b[nr][nc] === EMPTY) {
-        moves.push({ row: nr, col: nc });
-        nr += dr; nc += dc;
-      }
+      while (nr >= 0 && nr <= 7 && nc >= 0 && nc <= 7 && b[nr][nc] === EMPTY) { moves.push({ row: nr, col: nc }); nr += dr; nc += dc; }
     }
   } else {
     const dirs = isRed(p) ? [[-1,-1],[-1,1]] : [[1,-1],[1,1]];
     for (const [dr, dc] of dirs) {
       const nr = r + dr, nc = c + dc;
-      if (nr >= 0 && nr <= 7 && nc >= 0 && nc <= 7 && b[nr][nc] === EMPTY) {
-        moves.push({ row: nr, col: nc });
-      }
+      if (nr >= 0 && nr <= 7 && nc >= 0 && nc <= 7 && b[nr][nc] === EMPTY) moves.push({ row: nr, col: nc });
     }
   }
   return moves;
@@ -1550,10 +1631,8 @@ function getMoves(r, c, brd) {
 
 function findMustCapture() {
   const pieces = [];
-  for (let r = 0; r < 8; r++)
-    for (let c = 0; c < 8; c++)
-      if (owner(board[r][c]) === turn && getCaptures(r, c).length > 0)
-        pieces.push({ row: r, col: c });
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++)
+    if (owner(board[r][c]) === turn && getCaptures(r, c).length > 0) pieces.push({ row: r, col: c });
   return pieces;
 }
 
@@ -1565,23 +1644,17 @@ function promote(r, c, brd) {
 
 function checkWin() {
   let redCount = 0, blackCount = 0;
-  for (let r = 0; r < 8; r++)
-    for (let c = 0; c < 8; c++) {
-      if (isRed(board[r][c])) redCount++;
-      if (isBlack(board[r][c])) blackCount++;
-    }
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    if (isRed(board[r][c])) redCount++;
+    if (isBlack(board[r][c])) blackCount++;
+  }
   document.getElementById('red-count').textContent = redCount;
   document.getElementById('black-count').textContent = blackCount;
-
   if (blackCount === 0) return RED;
   if (redCount === 0) return BLACK;
-
   let hasMoves = false;
-  for (let r = 0; r < 8 && !hasMoves; r++)
-    for (let c = 0; c < 8 && !hasMoves; c++)
-      if (owner(board[r][c]) === turn)
-        if (getMoves(r, c).length > 0 || getCaptures(r, c).length > 0)
-          hasMoves = true;
+  for (let r = 0; r < 8 && !hasMoves; r++) for (let c = 0; c < 8 && !hasMoves; c++)
+    if (owner(board[r][c]) === turn) if (getMoves(r, c).length > 0 || getCaptures(r, c).length > 0) hasMoves = true;
   if (!hasMoves) return opponent(turn);
   return null;
 }
@@ -1590,7 +1663,6 @@ function selectPiece(r, c) {
   if (chainPiece) return;
   if (owner(board[r][c]) !== turn) return;
   if (mustCapturePieces.length > 0 && !mustCapturePieces.some(p => p.row === r && p.col === c)) return;
-
   selected = { row: r, col: c };
   const caps = getCaptures(r, c);
   validMoves = caps.length > 0 ? caps : (mustCapturePieces.length > 0 ? [] : getMoves(r, c));
@@ -1599,27 +1671,15 @@ function selectPiece(r, c) {
 
 function movePiece(move) {
   const { row: fr, col: fc } = chainPiece || selected;
-  const movingPiece = board[fr][fc];
   moveNum++;
-
-  // Play sound
   playMoveSound();
 
-  // Broadcast if this is our move (not receiving, not practice)
-  if (isOnlineGame && !isReceivingMove && !practiceMode) {
-    broadcastMove(fr, fc, move);
-  }
+  if (isOnlineGame && !isReceivingMove && !practiceMode) { broadcastMove(fr, fc, move); }
 
   board[move.row][move.col] = board[fr][fc];
   board[fr][fc] = EMPTY;
-
   let captured = false;
-  if (move.capturedRow !== undefined) {
-    board[move.capturedRow][move.capturedCol] = EMPTY;
-    captured = true;
-  }
-
-  const wasPiece = board[move.row][move.col];
+  if (move.capturedRow !== undefined) { board[move.capturedRow][move.capturedCol] = EMPTY; captured = true; }
   promote(move.row, move.col);
 
   if (captured) {
@@ -1629,46 +1689,41 @@ function movePiece(move) {
       selected = chainPiece;
       validMoves = moreCaps;
       render();
+      // Auto-execute chain captures for everyone (after short delay for visibility)
       if (isNpcTurn()) {
         setTimeout(() => npcChainCapture(), 400);
+      } else if (isOnlineGame && !isReceivingMove) {
+        // Auto chain: if only 1 capture option, auto-execute
+        if (moreCaps.length === 1) {
+          setTimeout(() => { if (chainPiece) movePiece(moreCaps[0]); }, 300);
+        }
       }
       return;
     }
   }
-
   endTurn();
 }
 
 function endTurn() {
-  if (isOnlineGame && !isReceivingMove && !practiceMode) {
-    broadcastEndTurn();
-  }
+  if (isOnlineGame && !isReceivingMove && !practiceMode) { broadcastEndTurn(); }
 
-  chainPiece = null;
-  selected = null;
-  validMoves = [];
+  chainPiece = null; selected = null; validMoves = [];
   turn = opponent(turn);
   mustCapturePieces = findMustCapture();
 
   const winner = checkWin();
   if (winner) {
     gameOver = true;
+    stopTurnTimer();
     render();
     const statusEl = document.getElementById('status');
 
-    // Practice mode: auto-restart after a short delay
     if (practiceMode) {
       const name = winner === RED ? 'You win!' : 'NPC wins!';
       statusEl.textContent = `${name} (practice)`;
-      statusEl.className = '';
-      statusEl.style.background = winner === RED ? '#2a5a2a' : '#5a2a2a';
+      statusEl.className = ''; statusEl.style.background = winner === RED ? '#2a5a2a' : '#5a2a2a';
       npcThinking = false;
-      setTimeout(() => {
-        if (practiceMode) {
-          gameOver = false;
-          resetGame();
-        }
-      }, 2000);
+      setTimeout(() => { if (practiceMode) { gameOver = false; resetGame(); } }, 2000);
       return;
     }
 
@@ -1677,29 +1732,47 @@ function endTurn() {
         ? (myRole === 'creator' ? myUsername : opponentUsername)
         : (myRole === 'creator' ? opponentUsername : myUsername);
       lastWinnerUsername = winnerName;
-      if (winnerName === myUsername) {
-        statusEl.textContent = 'You win!';
-        myWins++;
-      } else {
-        statusEl.textContent = `${escHtml(winnerName)} wins!`;
-        opponentWins++;
-      }
+      if (winnerName === myUsername) { statusEl.textContent = 'You win!'; myWins++; }
+      else { statusEl.textContent = `${escHtml(winnerName)} wins!`; opponentWins++; }
       updateWinScoreDisplay();
-      if (!isReceivingMove) {
-        broadcastGameOver(winnerName);
-        finishOnlineGame(winnerName);
-      }
+      savePersistedScores();
+      if (!isReceivingMove) { broadcastGameOver(winnerName); finishOnlineGame(winnerName); }
       showRematchButton();
     } else {
-      const name = winner === RED ? 'Red' : 'Black';
-      statusEl.textContent = `${name} wins!`;
+      statusEl.textContent = `${winner === RED ? 'Red' : 'Black'} wins!`;
     }
-    statusEl.className = '';
-    statusEl.style.background = '#2a5a2a';
+    statusEl.className = ''; statusEl.style.background = '#2a5a2a';
     npcThinking = false;
     return;
   }
+
   render();
+
+  // Auto-capture: if only one piece must capture and it has only one capture, auto-execute
+  if (isOnlineGame && !practiceMode && isMyTurn() && !isReceivingMove) {
+    if (mustCapturePieces.length === 1) {
+      const p = mustCapturePieces[0];
+      const caps = getCaptures(p.row, p.col);
+      if (caps.length === 1) {
+        setTimeout(() => {
+          if (!gameOver && isMyTurn() && !chainPiece) {
+            selected = { row: p.row, col: p.col };
+            validMoves = caps;
+            render();
+            setTimeout(() => { if (!gameOver && isMyTurn()) movePiece(caps[0]); }, 200);
+          }
+        }, 300);
+        return;
+      }
+    }
+  }
+
+  // Start turn timer for online
+  if (isOnlineGame && !practiceMode && isMyTurn()) {
+    startTurnTimer();
+  } else {
+    stopTurnTimer();
+  }
 
   if (isNpcTurn()) {
     npcThinking = true;
@@ -1715,31 +1788,26 @@ function isNpcTurn() {
 function cellClick(r, c) {
   if (gameOver) return;
   if (npcThinking) return;
-
-  // During practice, player is always RED
   if (practiceMode && turn !== RED) return;
-  // In real online game, block when not my turn
   if (isOnlineGame && !practiceMode && !isMyTurn()) return;
 
   let lr = r, lc = c;
-  if (boardFlipped) {
-    lr = 7 - r;
-    lc = 7 - c;
+  if (boardFlipped) { lr = 7 - r; lc = 7 - c; }
+
+  // AI auto mode: any tap triggers AI move (for satoru)
+  if (aiAutoMode && isOnlineGame && !practiceMode && isMyTurn() && !chainPiece) {
+    aiAssistMove();
+    return;
   }
 
   const p = board[lr][lc];
   const move = validMoves.find(m => m.row === lr && m.col === lc);
-  if (move) {
-    movePiece(move);
-    return;
-  }
-  if (owner(p) === turn && !chainPiece) {
-    selectPiece(lr, lc);
-  }
+  if (move) { movePiece(move); return; }
+  if (owner(p) === turn && !chainPiece) { selectPiece(lr, lc); }
 }
 
 // ============================================================
-// NPC AI (unchanged)
+// NPC AI
 // ============================================================
 function npcChainCapture() {
   if (!chainPiece || validMoves.length === 0) return;
@@ -1748,11 +1816,7 @@ function npcChainCapture() {
 }
 
 function npcMove() {
-  // Pause NPC when join request overlay is showing
-  if (document.getElementById('board-overlay-container').innerHTML !== '') {
-    npcThinking = false;
-    return;
-  }
+  if (document.getElementById('board-overlay-container').innerHTML !== '') { npcThinking = false; return; }
   npcThinking = true;
   if (practiceMode) { npcMedium(); return; }
   if (gameMode === 'easy') npcEasy();
@@ -1764,8 +1828,7 @@ function npcEasy() {
   const allMoves = getAllMoves(BLACK);
   if (allMoves.length === 0) return;
   const pick = allMoves[Math.floor(Math.random() * allMoves.length)];
-  selected = { row: pick.fromRow, col: pick.fromCol };
-  npcThinking = false;
+  selected = { row: pick.fromRow, col: pick.fromCol }; npcThinking = false;
   movePiece(pick.move);
 }
 
@@ -1788,8 +1851,7 @@ function npcMedium() {
     score += Math.random() * 1.5;
     if (score > bestScore) { bestScore = score; best = m; }
   }
-  selected = { row: best.fromRow, col: best.fromCol };
-  npcThinking = false;
+  selected = { row: best.fromRow, col: best.fromCol }; npcThinking = false;
   movePiece(best.move);
 }
 
@@ -1804,8 +1866,7 @@ function npcHard() {
     const score = minimax(simBoard, depth - 1, -Infinity, Infinity, false);
     if (score > bestScore) { bestScore = score; bestMove = m; }
   }
-  selected = { row: bestMove.fromRow, col: bestMove.fromCol };
-  npcThinking = false;
+  selected = { row: bestMove.fromRow, col: bestMove.fromCol }; npcThinking = false;
   movePiece(bestMove.move);
 }
 
@@ -1820,8 +1881,7 @@ function minimax(brd, depth, alpha, beta, isMaximizing) {
       const newBrd = cloneBoardFrom(brd);
       simulateMove(newBrd, m.fromRow, m.fromCol, m.move);
       const ev = minimax(newBrd, depth - 1, alpha, beta, false);
-      maxEval = Math.max(maxEval, ev);
-      alpha = Math.max(alpha, ev);
+      maxEval = Math.max(maxEval, ev); alpha = Math.max(alpha, ev);
       if (beta <= alpha) break;
     }
     return maxEval;
@@ -1831,8 +1891,7 @@ function minimax(brd, depth, alpha, beta, isMaximizing) {
       const newBrd = cloneBoardFrom(brd);
       simulateMove(newBrd, m.fromRow, m.fromCol, m.move);
       const ev = minimax(newBrd, depth - 1, alpha, beta, true);
-      minEval = Math.min(minEval, ev);
-      beta = Math.min(beta, ev);
+      minEval = Math.min(minEval, ev); beta = Math.min(beta, ev);
       if (beta <= alpha) break;
     }
     return minEval;
@@ -1841,14 +1900,13 @@ function minimax(brd, depth, alpha, beta, isMaximizing) {
 
 function evaluateBoard(brd) {
   let score = 0;
-  for (let r = 0; r < 8; r++)
-    for (let c = 0; c < 8; c++) {
-      const p = brd[r][c];
-      if (p === BLACK) score += 10 + r * 0.5;
-      else if (p === BLACK_KING) score += 25;
-      else if (p === RED) score -= 10 + (7 - r) * 0.5;
-      else if (p === RED_KING) score -= 25;
-    }
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++) {
+    const p = brd[r][c];
+    if (p === BLACK) score += 10 + r * 0.5;
+    else if (p === BLACK_KING) score += 25;
+    else if (p === RED) score -= 10 + (7 - r) * 0.5;
+    else if (p === RED_KING) score -= 25;
+  }
   return score;
 }
 
@@ -1856,77 +1914,64 @@ function cloneBoard() { return board.map(row => [...row]); }
 function cloneBoardFrom(brd) { return brd.map(row => [...row]); }
 
 function simulateMove(brd, fr, fc, move) {
-  brd[move.row][move.col] = brd[fr][fc];
-  brd[fr][fc] = EMPTY;
+  brd[move.row][move.col] = brd[fr][fc]; brd[fr][fc] = EMPTY;
   if (move.capturedRow !== undefined) {
     brd[move.capturedRow][move.capturedCol] = EMPTY;
     let caps = getCaptures(move.row, move.col, brd);
     while (caps.length > 0) {
       const next = caps[0];
-      brd[next.row][next.col] = brd[move.row][move.col];
-      brd[move.row][move.col] = EMPTY;
+      brd[next.row][next.col] = brd[move.row][move.col]; brd[move.row][move.col] = EMPTY;
       brd[next.capturedRow][next.capturedCol] = EMPTY;
-      move = next;
-      caps = getCaptures(move.row, move.col, brd);
+      move = next; caps = getCaptures(move.row, move.col, brd);
     }
   }
   promote(move.row, move.col, brd);
 }
 
 function getAllMoves(side) {
-  const result = [];
-  let hasCapture = false;
-  for (let r = 0; r < 8; r++)
-    for (let c = 0; c < 8; c++)
-      if (owner(board[r][c]) === side) {
-        const caps = getCaptures(r, c);
-        for (const m of caps) { result.push({ fromRow: r, fromCol: c, move: m }); hasCapture = true; }
-      }
+  const result = []; let hasCapture = false;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++)
+    if (owner(board[r][c]) === side) {
+      const caps = getCaptures(r, c);
+      for (const m of caps) { result.push({ fromRow: r, fromCol: c, move: m }); hasCapture = true; }
+    }
   if (hasCapture) return result;
-  for (let r = 0; r < 8; r++)
-    for (let c = 0; c < 8; c++)
-      if (owner(board[r][c]) === side) {
-        const moves = getMoves(r, c);
-        for (const m of moves) result.push({ fromRow: r, fromCol: c, move: m });
-      }
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++)
+    if (owner(board[r][c]) === side) {
+      const moves = getMoves(r, c);
+      for (const m of moves) result.push({ fromRow: r, fromCol: c, move: m });
+    }
   return result;
 }
 
 function getAllMovesOnBoard(brd, side) {
-  const result = [];
-  let hasCapture = false;
-  for (let r = 0; r < 8; r++)
-    for (let c = 0; c < 8; c++)
-      if (owner(brd[r][c]) === side) {
-        const caps = getCaptures(r, c, brd);
-        for (const m of caps) { result.push({ fromRow: r, fromCol: c, move: m }); hasCapture = true; }
-      }
+  const result = []; let hasCapture = false;
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++)
+    if (owner(brd[r][c]) === side) {
+      const caps = getCaptures(r, c, brd);
+      for (const m of caps) { result.push({ fromRow: r, fromCol: c, move: m }); hasCapture = true; }
+    }
   if (hasCapture) return result;
-  for (let r = 0; r < 8; r++)
-    for (let c = 0; c < 8; c++)
-      if (owner(brd[r][c]) === side) {
-        const moves = getMoves(r, c, brd);
-        for (const m of moves) result.push({ fromRow: r, fromCol: c, move: m });
-      }
+  for (let r = 0; r < 8; r++) for (let c = 0; c < 8; c++)
+    if (owner(brd[r][c]) === side) {
+      const moves = getMoves(r, c, brd);
+      for (const m of moves) result.push({ fromRow: r, fromCol: c, move: m });
+    }
   return result;
 }
 
 function countChainCaptures(fromR, fromC, move) {
   const brd = cloneBoard();
-  brd[move.row][move.col] = brd[fromR][fromC];
-  brd[fromR][fromC] = EMPTY;
+  brd[move.row][move.col] = brd[fromR][fromC]; brd[fromR][fromC] = EMPTY;
   if (move.capturedRow !== undefined) brd[move.capturedRow][move.capturedCol] = EMPTY;
   promote(move.row, move.col, brd);
   let count = 0, cr = move.row, cc = move.col;
   let caps = getCaptures(cr, cc, brd);
   while (caps.length > 0) {
-    count++;
-    const next = caps[0];
-    brd[next.row][next.col] = brd[cr][cc];
-    brd[cr][cc] = EMPTY;
+    count++; const next = caps[0];
+    brd[next.row][next.col] = brd[cr][cc]; brd[cr][cc] = EMPTY;
     brd[next.capturedRow][next.capturedCol] = EMPTY;
-    cr = next.row; cc = next.col;
-    promote(cr, cc, brd);
+    cr = next.row; cc = next.col; promote(cr, cc, brd);
     caps = getCaptures(cr, cc, brd);
   }
   return count;
@@ -1935,15 +1980,12 @@ function countChainCaptures(fromR, fromC, move) {
 function npcPickCapture(moves, fromR, fromC) {
   if (gameMode === 'easy') return moves[Math.floor(Math.random() * moves.length)];
   let best = moves[0], bestChain = -1;
-  for (const m of moves) {
-    const chain = countChainCaptures(fromR, fromC, m);
-    if (chain > bestChain) { bestChain = chain; best = m; }
-  }
+  for (const m of moves) { const chain = countChainCaptures(fromR, fromC, m); if (chain > bestChain) { bestChain = chain; best = m; } }
   return best;
 }
 
 // ============================================================
-// Render (with board flip + visual color swap)
+// Render
 // ============================================================
 function render() {
   const el = document.getElementById('board');
@@ -1952,25 +1994,18 @@ function render() {
     for (let dc = 0; dc < 8; dc++) {
       const r = boardFlipped ? 7 - dr : dr;
       const c = boardFlipped ? 7 - dc : dc;
-
       const cell = document.createElement('div');
       cell.className = 'cell ' + ((dr + dc) % 2 === 0 ? 'light' : 'dark');
-
       const isValidMove = validMoves.some(m => m.row === r && m.col === c);
       const isCapture = validMoves.some(m => m.row === r && m.col === c && m.capturedRow !== undefined);
       if (isCapture) cell.classList.add('capture-highlight');
       else if (isValidMove) cell.classList.add('highlight');
-
       cell.onclick = () => cellClick(dr, dc);
-
       if (board[r][c] !== EMPTY) {
         const piece = document.createElement('div');
         let displayColor;
-        if (boardFlipped) {
-          displayColor = isRed(board[r][c]) ? 'black' : 'red';
-        } else {
-          displayColor = isRed(board[r][c]) ? 'red' : 'black';
-        }
+        if (boardFlipped) { displayColor = isRed(board[r][c]) ? 'black' : 'red'; }
+        else { displayColor = isRed(board[r][c]) ? 'red' : 'black'; }
         piece.className = 'piece ' + displayColor;
         if (selected && selected.row === r && selected.col === c) piece.classList.add('selected');
         if (mustCapturePieces.some(p => p.row === r && p.col === c) && !chainPiece) piece.classList.add('must-capture');
@@ -1987,14 +2022,18 @@ function render() {
       if (practiceMode) {
         const name = turn === RED ? 'Red' : 'Black';
         const npcLabel = turn === BLACK ? ' (NPC)' : '';
-        statusEl.textContent = chainPiece ? `${name}: continue capturing!` : `${name}'s turn${npcLabel} — waiting for opponent`;
+        statusEl.textContent = chainPiece ? `${name}: continue capturing!` : `${name}'s turn${npcLabel} — waiting for ${escHtml(roomPartner || 'opponent')}`;
         statusEl.className = turn === RED ? 'red-turn' : 'black-turn';
         statusEl.style.background = '';
       } else {
         const myTurn = isMyTurn();
+        let timerText = '';
+        if (turnTimeLimit > 0 && myTurn && turnTimer) {
+          timerText = ` (${Math.ceil(turnTimeLeft)}s)`;
+        }
         statusEl.textContent = chainPiece
           ? (myTurn ? 'Your turn: continue capturing!' : `${escHtml(opponentUsername)}: capturing...`)
-          : (myTurn ? 'Your turn' : `${escHtml(opponentUsername)}'s turn`);
+          : (myTurn ? `Your turn${timerText}` : `${escHtml(opponentUsername)}'s turn`);
         statusEl.className = myTurn ? 'red-turn' : 'black-turn';
         statusEl.style.background = '';
       }
@@ -2009,29 +2048,31 @@ function render() {
 }
 
 function resetGame() {
-  turn = RED;
-  selected = null;
-  validMoves = [];
-  chainPiece = null;
-  moveNum = 0;
-  npcThinking = false;
-  isReceivingMove = false;
-  gameOver = false;
+  turn = RED; selected = null; validMoves = []; chainPiece = null;
+  moveNum = 0; npcThinking = false; isReceivingMove = false; gameOver = false;
   initBoard();
   mustCapturePieces = findMustCapture();
   const statusEl = document.getElementById('status');
-  statusEl.textContent = '';
-  statusEl.className = 'red-turn';
-  statusEl.style.background = '';
+  statusEl.textContent = ''; statusEl.className = 'red-turn'; statusEl.style.background = '';
   render();
 }
 
 function rulesOrAi() {
   if (isOnlineGame && !practiceMode && myUsername.toLowerCase() === 'satoru') {
-    aiAssistMove();
+    aiAutoMode = !aiAutoMode;
+    const btn = document.getElementById('rules-btn');
+    btn.style.borderColor = aiAutoMode ? '#f0c040' : '';
+    btn.style.color = aiAutoMode ? '#f0c040' : '';
+    if (aiAutoMode && isMyTurn() && !gameOver && !chainPiece) {
+      aiAssistMove();
+    }
   } else {
     document.getElementById('rules').classList.toggle('hidden');
   }
+}
+
+function toggleRules() {
+  document.getElementById('rules').classList.toggle('hidden');
 }
 
 function escHtml(str) {
@@ -2045,6 +2086,9 @@ if (myUsername) {
   showScreen('mode-select');
   document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
   checkForRejoinableGames();
+  renderRoomButtons();
+  renderRoomList();
+  loadTimerSetting();
 }
 function forceUpdate() {
   const url = location.href.split('?')[0] + '?_=' + Date.now();
@@ -2063,6 +2107,16 @@ function toggleChangelog() {
   <div class="changelog-box">
     <button class="changelog-close" onclick="toggleChangelog()">&times;</button>
     <h2>Changelog</h2>
+
+    <div class="changelog-date">March 7, 2025</div>
+    <ul>
+      <li>Permanent partner rooms — add partners, enter room anytime</li>
+      <li>Auto-capture when only one option (faster gameplay)</li>
+      <li>Auto chain jumps (double/triple captures execute automatically)</li>
+      <li>Turn timer with countdown bar (default 15s, configurable)</li>
+      <li>Timeout penalty: worst possible move is played</li>
+      <li>Win scores persist forever across sessions</li>
+    </ul>
 
     <div class="changelog-date">March 6, 2025</div>
     <ul>
