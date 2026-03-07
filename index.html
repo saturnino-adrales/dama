@@ -872,12 +872,11 @@ async function submitAuth() {
     const { data: existing } = await sb.from('profiles').select('id').eq('display_name', displayName).maybeSingle();
     if (existing) { errEl.textContent = 'Display name already taken.'; return; }
 
-    const { data, error } = await sb.auth.signUp({ email, password });
+    const { data, error } = await sb.auth.signUp({ email, password, options: { data: { display_name: displayName } } });
     if (error) { errEl.textContent = error.message; return; }
 
-    // Insert profile (upsert to handle retry after partial signup)
-    const { error: profErr } = await sb.from('profiles').upsert({ id: data.user.id, display_name: displayName }, { onConflict: 'id' });
-    if (profErr) { errEl.textContent = 'Account created but profile failed: ' + profErr.message; return; }
+    // Update display_name if trigger used fallback
+    await sb.from('profiles').update({ display_name: displayName }).eq('id', data.user.id);
 
     await onAuthSuccess(data.user);
   } else {
