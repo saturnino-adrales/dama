@@ -151,6 +151,15 @@
     from { box-shadow: 0 0 8px rgba(255, 80, 80, 0.4); }
     to   { box-shadow: 0 0 18px rgba(255, 80, 80, 0.8); }
   }
+  .piece.captured-effect {
+    animation: captureVanish 0.4s ease-out forwards;
+    pointer-events: none;
+  }
+  @keyframes captureVanish {
+    0%   { transform: scale(1); opacity: 1; box-shadow: 0 0 0 rgba(255,80,80,0); }
+    30%  { transform: scale(1.3); opacity: 0.8; box-shadow: 0 0 24px rgba(255,80,80,0.9); }
+    100% { transform: scale(0); opacity: 0; box-shadow: 0 0 40px rgba(255,80,80,0); }
+  }
   #controls {
     display: flex;
     gap: 12px;
@@ -693,6 +702,22 @@ function playMoveSound() {
     osc.start(audioCtx.currentTime);
     osc.stop(audioCtx.currentTime + 0.08);
   } catch (e) { /* silent fail */ }
+}
+
+function showCaptureEffect(row, col, pieceVal) {
+  const dr = boardFlipped ? 7 - row : row;
+  const dc = boardFlipped ? 7 - col : col;
+  const cellIndex = dr * 8 + dc;
+  const cells = document.getElementById('board').children;
+  if (!cells[cellIndex]) return;
+  const ghost = document.createElement('div');
+  let displayColor;
+  if (boardFlipped) { displayColor = isRed(pieceVal) ? 'black' : 'red'; }
+  else { displayColor = isRed(pieceVal) ? 'red' : 'black'; }
+  ghost.className = 'piece ' + displayColor + ' captured-effect';
+  if (isKing(pieceVal)) ghost.textContent = 'K';
+  cells[cellIndex].appendChild(ghost);
+  setTimeout(() => ghost.remove(), 450);
 }
 
 // ============================================================
@@ -1679,7 +1704,11 @@ function movePiece(move) {
   board[move.row][move.col] = board[fr][fc];
   board[fr][fc] = EMPTY;
   let captured = false;
-  if (move.capturedRow !== undefined) { board[move.capturedRow][move.capturedCol] = EMPTY; captured = true; }
+  if (move.capturedRow !== undefined) {
+    showCaptureEffect(move.capturedRow, move.capturedCol, board[move.capturedRow][move.capturedCol]);
+    board[move.capturedRow][move.capturedCol] = EMPTY;
+    captured = true;
+  }
   promote(move.row, move.col);
 
   if (captured) {
