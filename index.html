@@ -913,6 +913,7 @@ async function onAuthSuccess(user) {
 }
 
 async function signOut() {
+  if (!confirm('Sign out?')) return;
   await sb.auth.signOut();
   currentUser = null;
   myUserId = null;
@@ -2371,6 +2372,7 @@ function escHtml(str) {
   if (session?.user) await onAuthSuccess(session.user);
 })();
 async function forceUpdate() {
+  if (!confirm('Clear cache and reload?')) return;
   if ('caches' in window) {
     const keys = await caches.keys();
     await Promise.all(keys.map(k => caches.delete(k)));
