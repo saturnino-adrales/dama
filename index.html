@@ -394,7 +394,6 @@
   .room-btn:hover { background: #3a4a6a; border-color: #f0c040; }
 
   /* Room management */
-  .room-container { display: flex; flex-direction: column; gap: 8px; width: 260px; }
   .room-item {
     display: flex; justify-content: space-between; align-items: center;
     padding: 8px 12px; background: #1a1a2e; border: 1px solid #0f3460; border-radius: 6px;
@@ -402,14 +401,23 @@
   .room-item .partner-name { color: #8ab4ff; font-weight: bold; font-size: 14px; }
   .room-delete { background: none; border: none; color: #e74c3c; cursor: pointer; font-size: 16px; padding: 2px 6px; opacity: 0.6; }
   .room-delete:hover { opacity: 1; background: none; }
-  .add-partner-row { display: flex; gap: 8px; }
-  .add-partner-input {
-    flex: 1; padding: 8px 12px; font-size: 14px;
-    border: 1px solid #0f3460; border-radius: 6px;
-    background: #1a1a2e; color: #e0e0e0; outline: none;
+  .partner-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.7); z-index: 1000; justify-content: center; align-items: center;
   }
-  .add-partner-input:focus { border-color: #f0c040; }
-  .add-partner-btn { padding: 8px 14px; font-size: 13px; }
+  .partner-overlay.active { display: flex; }
+  .partner-picker-box {
+    background: #16213e; border: 2px solid #f0c040; border-radius: 12px;
+    padding: 24px; width: 300px; max-height: 80vh; overflow-y: auto; position: relative;
+  }
+  .user-pick-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 8px 12px; background: #1a1a2e; border: 1px solid #0f3460; border-radius: 6px;
+    margin-bottom: 6px; cursor: pointer; transition: border-color 0.2s;
+  }
+  .user-pick-item:hover { border-color: #f0c040; }
+  .user-pick-item .pick-name { color: #e0e0e0; font-size: 14px; }
+  .user-pick-item .pick-add { color: #4CAF50; font-weight: bold; font-size: 16px; }
 
   /* Timer bar */
   #timer-bar {
@@ -586,16 +594,19 @@
         <option value="0">Off</option>
       </select>
     </div>
-    <details>
-      <summary style="color:#888;font-size:13px;cursor:pointer;">Partner Rooms</summary>
-      <div class="room-container" style="margin-top:8px;">
-        <div id="room-list"></div>
-        <div class="add-partner-row">
-          <input type="text" id="partner-input" class="add-partner-input" placeholder="Partner display name" maxlength="20">
-          <button class="add-partner-btn" onclick="addPartner()">Add</button>
-        </div>
-      </div>
-    </details>
+    <button class="mode-btn" style="width:auto;padding:10px 20px;font-size:14px;" onclick="openPartnerPicker()">Partner Rooms</button>
+  </div>
+</div>
+
+<!-- Partner Picker Overlay -->
+<div id="partner-picker" class="partner-overlay" onclick="if(event.target===this)closePartnerPicker()">
+  <div class="partner-picker-box">
+    <button class="changelog-close" onclick="closePartnerPicker()">&times;</button>
+    <h3 style="color:#f0c040;margin-bottom:8px;">Partner Rooms</h3>
+    <div id="my-partners" style="margin-bottom:12px;"></div>
+    <h4 style="color:#888;font-size:13px;margin-bottom:6px;">Add Partner</h4>
+    <input type="text" id="user-filter" class="login-input" placeholder="Filter by name..." style="width:100%;margin-bottom:8px;padding:8px 12px;font-size:14px;" oninput="filterUsers()">
+    <div id="user-list" style="max-height:200px;overflow-y:auto;"></div>
   </div>
 </div>
 
@@ -898,7 +909,6 @@ async function onAuthSuccess(user) {
   document.getElementById('username-display').textContent = `Playing as: ${myUsername}`;
   checkForRejoinableGames();
   renderRoomButtons();
-  renderRoomList();
   loadTimerSetting();
 }
 
@@ -1052,6 +1062,8 @@ function findWorstMove(side) {
 // ============================================================
 // Partner Rooms
 // ============================================================
+let allUsers = []; // cached list of all users
+
 async function loadPartnerRooms() {
   if (!myUserId) return;
   const { data } = await sb.from('partner_rooms')
@@ -1076,44 +1088,70 @@ function renderRoomButtons() {
   }
 }
 
-function renderRoomList() {
-  const list = document.getElementById('room-list');
-  if (!list) return;
-  list.innerHTML = '';
-  for (const partner of partnerRooms) {
-    const item = document.createElement('div');
-    item.className = 'room-item';
-    item.innerHTML = `<span class="partner-name">${escHtml(partner.name)}</span>
-      <button class="room-delete" onclick="removePartner('${partner.userId}')">&times;</button>`;
-    list.appendChild(item);
-  }
+async function openPartnerPicker() {
+  const overlay = document.getElementById('partner-picker');
+  overlay.classList.add('active');
+  document.getElementById('user-filter').value = '';
+
+  // Render current partners
+  renderMyPartners();
+
+  // Fetch all users
+  const { data } = await sb.from('profiles').select('id, display_name').order('display_name');
+  allUsers = (data || []).filter(u => u.id !== myUserId);
+  renderUserList();
 }
 
-async function addPartner() {
-  const input = document.getElementById('partner-input');
-  const name = input.value.trim();
-  if (!name || name.toLowerCase() === myUsername.toLowerCase()) { input.focus(); return; }
+function closePartnerPicker() {
+  document.getElementById('partner-picker').classList.remove('active');
+}
 
-  // Look up partner by display_name
-  const { data: profile } = await sb.from('profiles').select('id, display_name').eq('display_name', name).maybeSingle();
-  if (!profile) { input.value = ''; input.placeholder = 'User not found'; setTimeout(() => input.placeholder = 'Partner display name', 2000); return; }
+function renderMyPartners() {
+  const el = document.getElementById('my-partners');
+  if (partnerRooms.length === 0) {
+    el.innerHTML = '<div style="color:#555;font-size:13px;">No partners added yet</div>';
+    return;
+  }
+  el.innerHTML = partnerRooms.map(p => `<div class="room-item" style="margin-bottom:6px;">
+    <span class="partner-name">${escHtml(p.name)}</span>
+    <button class="room-delete" onclick="removePartner('${p.userId}')">&times;</button>
+  </div>`).join('');
+}
 
-  if (partnerRooms.some(p => p.userId === profile.id)) return;
+function renderUserList() {
+  const filter = document.getElementById('user-filter').value.toLowerCase();
+  const el = document.getElementById('user-list');
+  const partnerIds = new Set(partnerRooms.map(p => p.userId));
+  const filtered = allUsers.filter(u => !partnerIds.has(u.id) && u.display_name.toLowerCase().includes(filter));
 
-  const { error } = await sb.from('partner_rooms').insert({ user_id: myUserId, partner_user_id: profile.id });
+  if (filtered.length === 0) {
+    el.innerHTML = '<div style="color:#555;font-size:13px;padding:8px;">No users found</div>';
+    return;
+  }
+  el.innerHTML = filtered.map(u => `<div class="user-pick-item" onclick="addPartnerById('${u.id}','${escHtml(u.display_name)}')">
+    <span class="pick-name">${escHtml(u.display_name)}</span>
+    <span class="pick-add">+</span>
+  </div>`).join('');
+}
+
+function filterUsers() { renderUserList(); }
+
+async function addPartnerById(userId, name) {
+  if (partnerRooms.some(p => p.userId === userId)) return;
+  const { error } = await sb.from('partner_rooms').insert({ user_id: myUserId, partner_user_id: userId });
   if (error) return;
-
-  partnerRooms.push({ userId: profile.id, name: profile.display_name });
-  input.value = '';
+  partnerRooms.push({ userId, name });
   renderRoomButtons();
-  renderRoomList();
+  renderMyPartners();
+  renderUserList();
 }
 
 async function removePartner(partnerUserId) {
   await sb.from('partner_rooms').delete().eq('user_id', myUserId).eq('partner_user_id', partnerUserId);
   partnerRooms = partnerRooms.filter(p => p.userId !== partnerUserId);
   renderRoomButtons();
-  renderRoomList();
+  renderMyPartners();
+  renderUserList();
 }
 
 function getRoomChannelName(partner) {
