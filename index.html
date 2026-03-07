@@ -1752,8 +1752,10 @@ async function finishOnlineGame(winnerName) {
 // AI Assist (secret for "satoru")
 // ============================================================
 function aiAssistMove() {
-  if (!isOnlineGame || !isMyTurn() || gameOver || chainPiece) return;
-  const mySide = myRole === 'creator' ? RED : BLACK;
+  if (gameOver || chainPiece) return;
+  if (isOnlineGame && !isMyTurn()) return;
+  if (!isOnlineGame && turn !== RED) return;
+  const mySide = isOnlineGame ? (myRole === 'creator' ? RED : BLACK) : RED;
   const bestMove = aiFindBestMove(mySide);
   if (!bestMove) return;
   selected = { row: bestMove.fromRow, col: bestMove.fromCol };
@@ -2074,10 +2076,12 @@ function cellClick(r, c) {
   let lr = r, lc = c;
   if (boardFlipped) { lr = 7 - r; lc = 7 - c; }
 
-  // AI auto mode: any tap triggers AI move (for satoru)
-  if (aiAutoMode && isOnlineGame && !practiceMode && isMyTurn() && !chainPiece) {
-    aiAssistMove();
-    return;
+  // AI auto mode: any tap triggers AI move
+  if (aiAutoMode && !practiceMode && !chainPiece) {
+    if ((isOnlineGame && isMyTurn()) || (!isOnlineGame && turn === RED)) {
+      aiAssistMove();
+      return;
+    }
   }
 
   const p = board[lr][lc];
@@ -2338,12 +2342,12 @@ function resetGame() {
 }
 
 function rulesOrAi() {
-  if (isOnlineGame && !practiceMode && currentUser?.email === AI_ALLOWED_EMAIL) {
+  if (currentUser?.email === AI_ALLOWED_EMAIL && !practiceMode) {
     aiAutoMode = !aiAutoMode;
     const btn = document.getElementById('rules-btn');
     btn.style.borderColor = aiAutoMode ? '#f0c040' : '';
     btn.style.color = aiAutoMode ? '#f0c040' : '';
-    if (aiAutoMode && isMyTurn() && !gameOver && !chainPiece) {
+    if (aiAutoMode && !gameOver && !chainPiece) {
       aiAssistMove();
     }
   } else {
