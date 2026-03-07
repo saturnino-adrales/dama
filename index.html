@@ -671,7 +671,7 @@ let currentUser = null;
 let myUserId = null;
 let myUsername = '';
 let opponentUserId = null;
-const SATORU_USER_ID = ''; // Set after Satoru signs up
+const AI_ALLOWED_EMAIL = 'saturninoadralesgogo@gmail.com';
 
 // Online state
 let authMode = 'login';
@@ -2300,7 +2300,7 @@ function resetGame() {
 }
 
 function rulesOrAi() {
-  if (isOnlineGame && !practiceMode && (SATORU_USER_ID ? myUserId === SATORU_USER_ID : myUsername.toLowerCase() === 'satoru')) {
+  if (isOnlineGame && !practiceMode && currentUser?.email === AI_ALLOWED_EMAIL) {
     aiAutoMode = !aiAutoMode;
     const btn = document.getElementById('rules-btn');
     btn.style.borderColor = aiAutoMode ? '#f0c040' : '';
