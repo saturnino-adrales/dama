@@ -1749,21 +1749,20 @@ function endTurn() {
   render();
 
   // Auto-capture: if only one piece must capture and it has only one capture, auto-execute
-  if (isOnlineGame && !practiceMode && isMyTurn() && !isReceivingMove) {
-    if (mustCapturePieces.length === 1) {
-      const p = mustCapturePieces[0];
-      const caps = getCaptures(p.row, p.col);
-      if (caps.length === 1) {
-        setTimeout(() => {
-          if (!gameOver && isMyTurn() && !chainPiece) {
-            selected = { row: p.row, col: p.col };
-            validMoves = caps;
-            render();
-            setTimeout(() => { if (!gameOver && isMyTurn()) movePiece(caps[0]); }, 200);
-          }
-        }, 300);
-        return;
-      }
+  const isHumanTurn = isOnlineGame ? (!practiceMode && isMyTurn() && !isReceivingMove) : (!isNpcTurn());
+  if (isHumanTurn && mustCapturePieces.length === 1) {
+    const p = mustCapturePieces[0];
+    const caps = getCaptures(p.row, p.col);
+    if (caps.length === 1) {
+      setTimeout(() => {
+        if (!gameOver && !chainPiece) {
+          selected = { row: p.row, col: p.col };
+          validMoves = caps;
+          render();
+          setTimeout(() => { if (!gameOver) movePiece(caps[0]); }, 200);
+        }
+      }, 300);
+      return;
     }
   }
 
