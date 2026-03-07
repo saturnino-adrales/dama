@@ -869,14 +869,14 @@ async function submitAuth() {
     if (!displayName) { errEl.textContent = 'Display name required.'; return; }
 
     // Check display name uniqueness
-    const { data: existing } = await sb.from('profiles').select('id').eq('display_name', displayName).maybeSingle();
+    const { data: existing } = await sb.from('profiles').select('id').eq('display_name', displayName).eq('type', 'dama').maybeSingle();
     if (existing) { errEl.textContent = 'Display name already taken.'; return; }
 
-    const { data, error } = await sb.auth.signUp({ email, password, options: { data: { display_name: displayName } } });
+    const { data, error } = await sb.auth.signUp({ email, password, options: { data: { display_name: displayName, app_type: 'dama' } } });
     if (error) { errEl.textContent = error.message; return; }
 
-    // Update display_name if trigger used fallback
-    await sb.from('profiles').update({ display_name: displayName }).eq('id', data.user.id);
+    // Update display_name and type if trigger used fallback
+    await sb.from('profiles').update({ display_name: displayName, type: 'dama' }).eq('id', data.user.id);
 
     await onAuthSuccess(data.user);
   } else {
@@ -895,7 +895,7 @@ async function onAuthSuccess(user) {
   if (!profile) {
     const name = prompt('Set your display name:');
     if (name && name.trim()) {
-      await sb.from('profiles').upsert({ id: myUserId, display_name: name.trim() }, { onConflict: 'id' });
+      await sb.from('profiles').upsert({ id: myUserId, display_name: name.trim(), type: 'dama' }, { onConflict: 'id' });
       profile = { display_name: name.trim() };
     }
   }
@@ -926,7 +926,7 @@ async function changeDisplayName() {
   const newName = prompt('New display name:', myUsername);
   if (!newName || !newName.trim() || newName.trim() === myUsername) return;
   const trimmed = newName.trim();
-  const { data: taken } = await sb.from('profiles').select('id').eq('display_name', trimmed).neq('id', myUserId).maybeSingle();
+  const { data: taken } = await sb.from('profiles').select('id').eq('display_name', trimmed).eq('type', 'dama').neq('id', myUserId).maybeSingle();
   if (taken) { alert('Display name already taken.'); return; }
   const { error } = await sb.from('profiles').update({ display_name: trimmed }).eq('id', myUserId);
   if (error) { alert('Failed: ' + error.message); return; }
@@ -1097,7 +1097,7 @@ async function openPartnerPicker() {
   renderMyPartners();
 
   // Fetch all users
-  const { data } = await sb.from('profiles').select('id, display_name').order('display_name');
+  const { data } = await sb.from('profiles').select('id, display_name').eq('type', 'dama').order('display_name');
   allUsers = (data || []).filter(u => u.id !== myUserId);
   renderUserList();
 }
