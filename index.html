@@ -726,6 +726,7 @@ let partnerRooms = []; // [{userId, name}]
 let roomChannel = null;
 let inRoom = false;
 let roomPartner = '';
+let roomGameInProgress = false;
 
 const COLS = 'abcdefgh';
 function pos(r, c) { return COLS[c] + (8 - r); }
@@ -1221,14 +1222,23 @@ async function enterRoom(partner, partnerUserId) {
       opponentPresent = true;
       updateStatusDot();
       if (practiceMode) {
-        // Partner arrived! Start real game. Sorted user ID first = creator.
+        // Partner arrived! Sorted user ID first = creator.
         const iAmCreator = (myUserId || myUsername.toLowerCase()) < (opponentUserId || partner.toLowerCase());
         myRole = iAmCreator ? 'creator' : 'joiner';
         boardFlipped = myRole === 'joiner';
         // Setup game channel (reuse room channel for moves)
-        if (gameChannel) sb.removeChannel(gameChannel);
+        if (gameChannel && gameChannel !== roomChannel) sb.removeChannel(gameChannel);
         gameChannel = roomChannel;
-        startOnlineGameInRoom();
+        if (roomGameInProgress) {
+          // Resuming — sync board state to reconnecting partner
+          resumeOnlineGameInRoom();
+          roomChannel.send({ type: 'broadcast', event: 'sync_response', payload: {
+            sender: myUsername, board, turn, chainPiece, moveNum
+          }});
+        } else {
+          // Fresh game
+          startOnlineGameInRoom();
+        }
       }
     }
     if (opponentPresent && !partnerHere && inRoom) {
@@ -1236,13 +1246,13 @@ async function enterRoom(partner, partnerUserId) {
       updateStatusDot();
       // Partner left during game - go back to practice
       if (!practiceMode && !gameOver) {
+        roomGameInProgress = true;
         practiceMode = true;
         waitingForOpponent = true;
         npcThinking = false;
         stopTurnTimer();
         document.getElementById('mode-label').textContent = `Practice vs NPC — waiting for ${escHtml(partner)}`;
         document.getElementById('resign-btn').classList.add('hidden');
-        // Don't reset board - keep state
         render();
       }
     }
@@ -1320,6 +1330,7 @@ function startOnlineGameInRoom() {
   npcThinking = false;
   rematchRequested = false;
   aiAutoMode = false;
+  roomGameInProgress = true;
 
   clearBoardOverlay();
   document.getElementById('board').classList.remove('disabled');
@@ -1334,11 +1345,31 @@ function startOnlineGameInRoom() {
   startTurnTimer();
 }
 
+function resumeOnlineGameInRoom() {
+  practiceMode = false;
+  waitingForOpponent = false;
+  npcThinking = false;
+
+  clearBoardOverlay();
+  document.getElementById('board').classList.remove('disabled');
+  document.getElementById('mode-label').textContent = `Room: ${myUsername} vs ${opponentUsername}`;
+  document.getElementById('restart-btn').classList.add('hidden');
+  document.getElementById('resign-btn').classList.remove('hidden');
+  document.getElementById('rematch-btn').classList.add('hidden');
+
+  updateOnlineScoreLabels();
+  updateWinScoreDisplay();
+  mustCapturePieces = findMustCapture();
+  render();
+  startTurnTimer();
+}
+
 function leaveRoom() {
   if (roomChannel) { sb.removeChannel(roomChannel); roomChannel = null; }
   if (roomChannel === gameChannel) gameChannel = null;
   inRoom = false;
   roomPartner = '';
+  roomGameInProgress = false;
   stopTurnTimer();
 }
 
