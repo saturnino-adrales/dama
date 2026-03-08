@@ -1325,6 +1325,7 @@ async function enterRoom(partner, partnerUserId) {
   boardFlipped = false;
   waitingForOpponent = true;
   practiceMode = true;
+  opponentPresent = false;
   gameOver = false;
   aiAutoMode = false;
 
@@ -1392,7 +1393,6 @@ async function enterRoom(partner, partnerUserId) {
   roomChannel.subscribe(async (status) => {
     if (status === 'SUBSCRIBED') {
       await roomChannel.track({ username: myUsername, userId: myUserId, online_at: new Date().toISOString() });
-      opponentPresent = false;
     }
   });
 
@@ -2616,6 +2616,9 @@ if ('serviceWorker' in navigator) {
 
     <div class="changelog-date">March 8, 2026</div>
     <ul>
+      <li>PWA support — install as fullscreen app on iPhones (no address bar)</li>
+      <li>Install button on mode select screen (hidden when already installed)</li>
+      <li>Fix partner room bug where both players get stuck on "waiting for" each other</li>
       <li>Fix chain auto-capture not working in local human vs NPC games</li>
       <li>Win probability bar — real-time % chance of winning based on material, position, and mobility</li>
     </ul>
