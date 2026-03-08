@@ -69,6 +69,45 @@
   #score span { padding: 6px 16px; border-radius: 6px; }
   .score-red { background: #4a1a1a; color: #ff6b6b; border: 1px solid #e74c3c; }
   .score-black { background: #1a1a2e; color: #bbb; border: 1px solid #555; }
+  #win-prob-bar {
+    width: min(85vw, 560px);
+    height: 22px;
+    border-radius: 11px;
+    overflow: hidden;
+    display: flex;
+    background: #2c3e50;
+    border: 1px solid #444;
+    position: relative;
+    font-size: 11px;
+    font-weight: bold;
+  }
+  #win-prob-bar .prob-red {
+    background: linear-gradient(90deg, #e74c3c, #c0392b);
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-start;
+    padding-left: 8px;
+    color: #fff;
+    transition: width 0.5s ease;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  #win-prob-bar .prob-black {
+    background: linear-gradient(90deg, #555, #333);
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 8px;
+    color: #ccc;
+    transition: width 0.5s ease;
+    white-space: nowrap;
+    min-width: 0;
+  }
+  #win-prob-bar .prob-red span, #win-prob-bar .prob-black span {
+    text-shadow: 0 1px 2px rgba(0,0,0,0.5);
+  }
   #board {
     display: grid;
     grid-template-columns: repeat(8, 1fr);
@@ -635,6 +674,10 @@
     <span class="score-red">Red (You): <b id="red-count">12</b></span>
     <span class="score-black">Black: <b id="black-count">12</b> <span id="opponent-status-dot" class="status-dot hidden"></span></span>
   </div>
+  <div id="win-prob-bar">
+    <div class="prob-red" style="width:50%"><span>50%</span></div>
+    <div class="prob-black" style="width:50%"><span>50%</span></div>
+  </div>
   <div id="mode-label"></div>
   <div id="status" class="red-turn">Red's turn</div>
   <div id="timer-bar" class="hidden"><div id="timer-fill"></div></div>
@@ -737,6 +780,67 @@ function isBlack(p) { return p === BLACK || p === BLACK_KING; }
 function isKing(p) { return p === RED_KING || p === BLACK_KING; }
 function owner(p) { return isRed(p) ? RED : isBlack(p) ? BLACK : EMPTY; }
 function opponent(t) { return t === RED ? BLACK : RED; }
+
+// ============================================================
+// Win Probability (material + positional heuristics)
+// ============================================================
+function calcWinProbability() {
+  let redScore = 0, blackScore = 0;
+  for (let r = 0; r < 8; r++) {
+    for (let c = 0; c < 8; c++) {
+      const p = board[r][c];
+      if (p === EMPTY) continue;
+      const isR = isRed(p);
+      let val = 0;
+
+      // Material: regular=3, king=5
+      if (isKing(p)) {
+        val = 5;
+        // King center control bonus
+        if (c >= 2 && c <= 5 && r >= 2 && r <= 5) val += 0.5;
+      } else {
+        val = 3;
+        // Advancement bonus: how far forward the piece has progressed (0-7 rows)
+        const advancement = isR ? (7 - r) : r; // red moves up (lower r = more advanced), black moves down
+        val += advancement * 0.3;
+        // Center control bonus
+        if (c >= 2 && c <= 5) val += 0.3;
+        // Back row defense bonus (protects against kinging)
+        if ((isR && r === 7) || (!isR && r === 0)) val += 0.5;
+      }
+
+      // Mobility: count available moves and captures
+      const moves = getMoves(r, c);
+      const caps = getCaptures(r, c);
+      val += moves.length * 0.15;
+      val += caps.length * 0.4;
+
+      if (isR) redScore += val; else blackScore += val;
+    }
+  }
+
+  // Avoid division by zero
+  if (redScore + blackScore === 0) return 50;
+
+  // Convert to probability with sigmoid-like scaling for more dramatic swings
+  const ratio = redScore / (redScore + blackScore);
+  // Apply power curve to make advantages feel more decisive
+  const scaled = 1 / (1 + Math.pow((1 - ratio) / ratio, 1.5));
+  return Math.round(Math.max(1, Math.min(99, scaled * 100)));
+}
+
+function updateWinProbBar() {
+  const bar = document.getElementById('win-prob-bar');
+  if (!bar) return;
+  const redProb = calcWinProbability();
+  const blackProb = 100 - redProb;
+  const redBar = bar.querySelector('.prob-red');
+  const blackBar = bar.querySelector('.prob-black');
+  redBar.style.width = redProb + '%';
+  blackBar.style.width = blackProb + '%';
+  redBar.querySelector('span').textContent = redProb >= 10 ? redProb + '%' : '';
+  blackBar.querySelector('span').textContent = blackProb >= 10 ? blackProb + '%' : '';
+}
 
 // ============================================================
 // Sound Effect (Web Audio API)
@@ -2384,6 +2488,7 @@ function render() {
       statusEl.style.background = '';
     }
   }
+  updateWinProbBar();
 }
 
 function resetGame() {
@@ -2451,6 +2556,11 @@ function toggleChangelog() {
   <div class="changelog-box">
     <button class="changelog-close" onclick="toggleChangelog()">&times;</button>
     <h2>Changelog</h2>
+
+    <div class="changelog-date">March 8, 2026</div>
+    <ul>
+      <li>Win probability bar — real-time % chance of winning based on material, position, and mobility</li>
+    </ul>
 
     <div class="changelog-date">March 7, 2026</div>
     <ul>
