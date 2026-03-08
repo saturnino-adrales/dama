@@ -2130,11 +2130,9 @@ function movePiece(move) {
       // Auto-execute chain captures for everyone (after short delay for visibility)
       if (isNpcTurn()) {
         setTimeout(() => npcChainCapture(), 400);
-      } else if (isOnlineGame && !isReceivingMove) {
-        // Auto chain: if only 1 capture option, auto-execute
-        if (moreCaps.length === 1) {
-          setTimeout(() => { if (chainPiece) movePiece(moreCaps[0]); }, 300);
-        }
+      } else if (moreCaps.length === 1) {
+        // Auto chain: if only 1 capture option, auto-execute (works for local & online)
+        setTimeout(() => { if (chainPiece) movePiece(moreCaps[0]); }, 300);
       }
       return;
     }
