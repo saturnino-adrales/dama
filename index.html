@@ -7,6 +7,12 @@
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
 <title>Dama - Checkers</title>
+<link rel="manifest" href="manifest.json">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Dama">
+<link rel="apple-touch-icon" href="icon-192.png">
+<meta name="theme-color" content="#1a1a2e">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -521,6 +527,23 @@
   }
   #changelog-btn:hover { opacity: 1; border-color: #f0c040; color: #e0e0e0; }
 
+  /* Install button */
+  #install-btn {
+    display: none;
+    padding: 12px 40px;
+    font-size: 16px;
+    border: 2px solid #f0c040;
+    border-radius: 8px;
+    background: #0f3460;
+    color: #f0c040;
+    cursor: pointer;
+    transition: all 0.2s;
+    width: 260px;
+    text-align: center;
+    font-weight: bold;
+  }
+  #install-btn:hover { background: #1a3a6e; }
+
   /* Changelog modal */
   #changelog-overlay {
     display: none;
@@ -621,6 +644,7 @@
     vs NPC (Hard)
     <small>AI looks ahead and plays smart</small>
   </button>
+  <button id="install-btn" onclick="installApp()">Install App</button>
   <div id="room-manage" style="margin-top:8px;">
     <div class="timer-setting" style="margin-bottom:8px;">
       <span>Turn timer:</span>
@@ -2544,6 +2568,41 @@ async function forceUpdate() {
 
 function toggleChangelog() {
   document.getElementById('changelog-overlay').classList.toggle('active');
+}
+
+// PWA install
+let deferredPrompt = null;
+const isStandalone = window.matchMedia('(display-mode: standalone)').matches
+  || window.navigator.standalone === true;
+
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault();
+  deferredPrompt = e;
+  if (!isStandalone) {
+    document.getElementById('install-btn').style.display = '';
+  }
+});
+
+function installApp() {
+  if (deferredPrompt) {
+    deferredPrompt.prompt();
+    deferredPrompt.userChoice.then(() => {
+      deferredPrompt = null;
+      document.getElementById('install-btn').style.display = 'none';
+    });
+  } else if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !window.navigator.standalone) {
+    alert('Tap the Share button (box with arrow) then "Add to Home Screen" to install.');
+  }
+}
+
+// Show install button for iOS Safari (no beforeinstallprompt on iOS)
+if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !isStandalone) {
+  document.getElementById('install-btn').style.display = '';
+}
+
+// Register service worker
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js');
 }
 </script>
 
