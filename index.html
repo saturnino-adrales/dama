@@ -1301,6 +1301,7 @@ async function enterRoom(partner, partnerUserId) {
   boardFlipped = false;
   waitingForOpponent = true;
   practiceMode = true;
+  opponentPresent = false;
   gameOver = false;
   aiAutoMode = false;
 
@@ -1368,7 +1369,6 @@ async function enterRoom(partner, partnerUserId) {
   roomChannel.subscribe(async (status) => {
     if (status === 'SUBSCRIBED') {
       await roomChannel.track({ username: myUsername, userId: myUserId, online_at: new Date().toISOString() });
-      opponentPresent = false;
     }
   });
 
