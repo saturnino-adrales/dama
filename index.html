@@ -2591,14 +2591,20 @@ function installApp() {
       deferredPrompt = null;
       document.querySelectorAll('.install-btn').forEach(b => b.style.display = 'none');
     });
-  } else if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !window.navigator.standalone) {
-    alert('Tap the Share button (box with arrow) then "Add to Home Screen" to install.');
+  } else if (/iPhone|iPad|iPod/.test(navigator.userAgent)) {
+    alert('Open this page in Safari, tap the Share button (box with arrow), then "Add to Home Screen" to install as a fullscreen app.');
+  } else {
+    alert('Use your browser menu to "Add to Home Screen" or "Install App".');
   }
 }
 
-// Show install button for iOS Safari (no beforeinstallprompt on iOS)
-if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !isStandalone) {
-  document.querySelectorAll('.install-btn').forEach(b => b.style.display = '');
+// Show install button on iOS (no beforeinstallprompt on any iOS browser)
+// Also show on any mobile browser that didn't fire beforeinstallprompt
+if (!isStandalone) {
+  const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+  if (isMobile) {
+    document.querySelectorAll('.install-btn').forEach(b => b.style.display = '');
+  }
 }
 
 // Register service worker
