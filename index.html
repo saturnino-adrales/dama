@@ -528,7 +528,7 @@
   #changelog-btn:hover { opacity: 1; border-color: #f0c040; color: #e0e0e0; }
 
   /* Install button */
-  #install-btn {
+  .install-btn {
     display: none;
     padding: 12px 40px;
     font-size: 16px;
@@ -542,7 +542,7 @@
     text-align: center;
     font-weight: bold;
   }
-  #install-btn:hover { background: #1a3a6e; }
+  .install-btn:hover { background: #1a3a6e; }
 
   /* Changelog modal */
   #changelog-overlay {
@@ -615,6 +615,7 @@
   <div id="auth-error" style="color:#e74c3c;font-size:13px;min-height:18px;"></div>
   <button class="mode-btn" onclick="submitAuth()">Login</button>
   <div id="auth-toggle" style="color:#888;font-size:13px;cursor:pointer;" onclick="toggleAuthMode()">Don't have an account? <span style="color:#f0c040;">Sign up</span></div>
+  <button class="install-btn" onclick="installApp()" style="margin-top:12px;">Install App</button>
 </div>
 
 <!-- Mode Selection Screen -->
@@ -644,7 +645,7 @@
     vs NPC (Hard)
     <small>AI looks ahead and plays smart</small>
   </button>
-  <button id="install-btn" onclick="installApp()">Install App</button>
+  <button class="install-btn" onclick="installApp()">Install App</button>
   <div id="room-manage" style="margin-top:8px;">
     <div class="timer-setting" style="margin-bottom:8px;">
       <span>Turn timer:</span>
@@ -2579,7 +2580,7 @@ window.addEventListener('beforeinstallprompt', e => {
   e.preventDefault();
   deferredPrompt = e;
   if (!isStandalone) {
-    document.getElementById('install-btn').style.display = '';
+    document.querySelectorAll('.install-btn').forEach(b => b.style.display = '');
   }
 });
 
@@ -2588,7 +2589,7 @@ function installApp() {
     deferredPrompt.prompt();
     deferredPrompt.userChoice.then(() => {
       deferredPrompt = null;
-      document.getElementById('install-btn').style.display = 'none';
+      document.querySelectorAll('.install-btn').forEach(b => b.style.display = 'none');
     });
   } else if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !window.navigator.standalone) {
     alert('Tap the Share button (box with arrow) then "Add to Home Screen" to install.');
@@ -2597,7 +2598,7 @@ function installApp() {
 
 // Show install button for iOS Safari (no beforeinstallprompt on iOS)
 if (/iPhone|iPad|iPod/.test(navigator.userAgent) && !isStandalone) {
-  document.getElementById('install-btn').style.display = '';
+  document.querySelectorAll('.install-btn').forEach(b => b.style.display = '');
 }
 
 // Register service worker
@@ -2616,6 +2617,7 @@ if ('serviceWorker' in navigator) {
 
     <div class="changelog-date">March 10, 2026</div>
     <ul>
+      <li>Install App button now appears on both login and mode select screens</li>
       <li>Fix partner room race condition — presence reset after track() no longer undoes opponent detection</li>
     </ul>
 
